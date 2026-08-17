@@ -2832,6 +2832,14 @@ header .sub{cursor:pointer}
   position:fixed;left:0;right:0;top:0;height:52vh;z-index:60;
   pointer-events:none;
 }
+/* Landscape phones have very little height, so the stage takes more of it
+   and everything inside tightens up. */
+body.land #atkStage{height:66vh}
+body.land .as-inner{gap:3px;padding:4px}
+body.land .as-label{font-size:11px}
+body.land .as-tally{font-size:12.5px}
+body.land .as-hint{font-size:11px}
+body.land .as-skip{padding:6px 14px;font-size:12px}
 #atkStage.hide{display:none}
 .as-veil{
   position:absolute;inset:0;
@@ -2847,14 +2855,30 @@ header .sub{cursor:pointer}
   font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
   color:#e08a7a;text-shadow:0 1px 3px rgba(0,0,0,.9);
 }
-.as-card{position:relative;pointer-events:none;filter:drop-shadow(0 6px 18px rgba(0,0,0,.7))}
-.as-card .card{cursor:default;transform:scale(1.02)}
+.as-card{
+  position:relative;pointer-events:none;
+  filter:drop-shadow(0 6px 18px rgba(0,0,0,.7));
+  /* The card MUST fit inside the stage. A full-size card plus the label,
+     tally, chips and button overflowed a landscape phone and the top of the
+     attacker was cut off above the screen edge — which is where its health
+     number lives, i.e. the one number you need to decide whether to block.
+     Scaled to the space available rather than a fixed size. */
+  flex:0 1 auto;min-height:0;
+  display:flex;align-items:center;justify-content:center;
+}
+.as-card .card{
+  cursor:default;
+  transform-origin:center center;
+  transform:scale(var(--asScale,1));
+}
 /* pulses while it is waiting to be answered, so an unanswered attack never
    looks like part of the static board */
-#atkStage.armed .as-card{animation:asPulse .5s ease-in-out infinite alternate}
+/* pulse is applied to the WRAPPER so it composes with the fit-scale on the
+   card itself instead of overwriting it */
+#atkStage.armed .as-card{animation:asPulse .55s ease-in-out infinite alternate}
 @keyframes asPulse{
-  from{transform:translateY(0) scale(1)}
-  to{transform:translateY(-5px) scale(1.045)}
+  from{transform:translateY(0)}
+  to{transform:translateY(-5px)}
 }
 .as-tally{
   font-size:14px;font-weight:800;color:rgba(232,215,176,.92);
@@ -3551,7 +3575,7 @@ header .sub{cursor:pointer}
 </div>
 <div class="hide" id="atkStage">
   <div class="as-veil"></div>
-  <div class="as-inner">
+  <div class="as-inner" id="asInner">
     <div class="as-label" id="asLabel">Opponent attacks</div>
     <div class="as-card" id="asCard"></div>
     <div class="as-tally" id="asTally"></div>
@@ -7004,11 +7028,17 @@ function mkUnitV2(number,terrain,pi,cityGrade,weak){
     spent:false,
   };
   // ---- BATTLE SYSTEM: every unit has a body ----
-  // HP = (atk + cost) x archetype multiplier. See BATTLE-SYSTEM-DESIGN.md §3.
-  // Computed AFTER atk/cost are final (heavy variant, terrain, city bonus all
-  // feed in), so a heavier card is genuinely tougher, not just harder-hitting.
+  // HP = (atk + cost) x archetype multiplier, computed from the PRINTED unit
+  // rather than the rolled card. See BATTLE-SYSTEM-DESIGN.md §3.
+  //
+  // Deliberately NOT from the final atk/cost. Heavy adds +2 attack AND +1
+  // cost, so folding those in compounded to +3 health and produced round-one
+  // attackers with 7 health against a defender holding 2 energy — physically
+  // unblockable, whatever the player did. A heavy card should hit harder,
+  // not also become unkillable. Terrain/city riders are excluded for the
+  // same reason: they are damage riders, not bodies.
   // Mystery cards never get HP — they are a damage source only, never a body.
-  c.maxHp=unitHp(c);
+  c.maxHp=unitHp({atk:u.dmg,cost:u.cost,arch:c.arch});
   c.curHp=c.maxHp;
   // A healer on Mountain terrain used to come out as "heal 1, 1 to you" —
   // two riders that cancel to nothing, which reads as a bug on the card face.
@@ -7386,6 +7416,7 @@ function showBlockPrompt(card,defPi,cands){
     cardFaceHTML(card,1-defPi)+'</div>';
   st.classList.remove('hide');
   st.classList.add('armed');
+  fitStageCard();
   renderStage();
   // The hand lives in a slide-up panel that is normally CLOSED during the
   // opponent's turn — an attacker appearing over an unreachable hand is the
@@ -7393,6 +7424,34 @@ function showBlockPrompt(card,defPi,cands){
   openHandPanel();
   renderHand();          // repaint so the hand knows it can be dragged now
 }
+// Cards are a fixed pixel size, so CSS alone cannot shrink one to fit — it
+// has to be measured against the room actually left over after the label,
+// tally, chips and button have taken theirs. Without this the top of the
+// attacker (where its HEALTH is printed — the number the whole decision turns
+// on) was cut off above the screen edge on a landscape phone.
+function fitStageCard(){
+  const box=$('asCard'), card=box&&box.firstElementChild;
+  if(!card)return;
+  card.style.setProperty('--asScale',1);
+  const inner=$('asInner')||box.parentElement;
+  const stage=$('atkStage');
+  if(!inner||!stage)return;
+  // room = stage height minus everything else in the column
+  let used=0;
+  for(const el of inner.children){
+    if(el===box)continue;
+    used+=el.getBoundingClientRect().height+6;
+  }
+  const availH=Math.max(60,stage.getBoundingClientRect().height-used-16);
+  const availW=Math.max(60,stage.getBoundingClientRect().width-24);
+  const r=card.getBoundingClientRect();
+  if(!r.height||!r.width)return;
+  // never enlarge past 1: a big card is fine, an overflowing one is not
+  const scale=Math.min(1,availH/r.height,availW/r.width);
+  card.style.setProperty('--asScale',Math.max(0.45,scale).toFixed(3));
+}
+addEventListener('resize',()=>{if(G.pendingAtk)fitStageCard();});
+
 // Everything that changes as cards are committed lives here, so the drag
 // handler and the chip taps share one repaint.
 function renderStage(){
@@ -7423,6 +7482,9 @@ function renderStage(){
   $('asHint').textContent=blockSel.length
     ? (power>=need?'Release \u2014 it dies':'Drag another card up')
     : 'Drag a card up to defend';
+  // committing cards adds chips, which eats vertical room — refit or the
+  // card starts overflowing again after the first block is committed
+  fitStageCard();
 }
 // Called by the hand's drag handler when a card is released over the stage.
 // Returns false if it could not be committed, so the caller can toast.
@@ -9776,9 +9838,17 @@ function hud(){
     const maxHp=p.maxHp||MAXHP;
     const hpv=shownHp(seat);
     $('hp'+(i+1)).textContent=Math.max(0,hpv);
-    $('en'+(i+1)).textContent=p.energy;
-    $('em'+(i+1)).textContent='/'+total;
-    paintEnergySegments(i+1,p.energy,total);
+    // BATTLE SYSTEM: while an attack is waiting on you, the number that
+    // matters is your DEFENCE budget, not the turn energy you already spent.
+    // Showing the spent turn energy here read as a flat 0 and made blocking
+    // look broken even though the budget was there.
+    const blocking=G.pendingAtk&&G.pendingAtk.defPi===seat;
+    const shownEn=blocking?defBudget(seat):p.energy;
+    const shownTot=blocking?Math.max(total,defBudget(seat)):total;
+    $('en'+(i+1)).textContent=shownEn;
+    $('em'+(i+1)).textContent='/'+shownTot;
+    paintEnergySegments(i+1,shownEn,shownTot);
+    $('enBox'+(i+1))&&$('enBox'+(i+1)).classList.toggle('defending',!!blocking);
     // the bar is gone, so the hex itself turns red when a hero is in danger
     $('hpBox'+(i+1)).classList.toggle('low',hpv<=maxHp*0.34);
     // hero armour hexagon: only present when there's armour to show
