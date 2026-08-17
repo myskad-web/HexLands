@@ -6326,7 +6326,16 @@ function draw(){
       }
       // While a 7 is unresolved, a bouncing arrow marks the robber so it's
       // obvious that the game is waiting on you rather than stuck.
-      if(G.phase==='robber'&&G.turn===ME&&!G.robberAnim){
+      //
+      // THE BUG, reported directly: this arrow lives in a completely
+      // separate code block from the "eligible hex" glow pulse above
+      // (drawInnerHex, gated on numberRevealAt already) — so when that
+      // pulse was fixed to wait for the dice reveal, this arrow was never
+      // touched and kept firing the instant G.phase flipped to 'robber',
+      // which happens synchronously in doRoll() well before flashRoll's own
+      // tumble finishes. Same gate, same reasoning, just added here too.
+      if(G.phase==='robber'&&G.turn===ME&&!G.robberAnim&&
+         performance.now()>=numberRevealAt){
         const bob=Math.abs(Math.sin(now/300))*S*0.20;
         const ay=rc.y-S*0.72-bob;
         cx.save();
@@ -7510,7 +7519,7 @@ function finishBlock(take){
     }
   }
   hud();renderHand();
-  if(G.players[defPi].hp<=0)endGame(attacker);
+  if(G.players[defPi].hp<=0)checkDefeat(defPi,attacker);
   else if(blockThen){const f=blockThen;blockThen=null;f();}
 }
 let blockThen=null;
@@ -8217,6 +8226,25 @@ function popNumber(pi,text,heal,amount){
 // took all the health off at once, before any card had been shown. playCard
 // raises this flag around fx() and pays the number out on landing instead.
 let DEFER_POPS=false, DEFERRED_HIT=0, DEFERRED_PI=null;
+// THE BUG, reported directly: endGame() used to fire the INSTANT hp crossed
+// zero — inside dmgHero, synchronously, on the same tick the number is
+// subtracted. For a normal attack that's fine, but for an attack-flight
+// kill the card's own damage pop doesn't happen until ~660ms into a
+// separate animation timeline (see the drop-handler's flight sequence),
+// and a block-reveal clash takes even longer. The Defeat screen was
+// covering the board before the killing blow had visually landed — the
+// player saw the menu, not what beat them.
+// Centralised here so BOTH places that check for lethal hp (dmgHero's own
+// check, and finishBlock's defensive backstop a few lines below it) go
+// through the same delay, rather than one of them firing endGame()
+// immediately and undoing the other's wait. netGameEnded/defeatPending
+// double-guard against either path racing the other.
+let defeatPending=false;
+function checkDefeat(pi,winner){
+  if(G.players[pi].hp>0||defeatPending||netGameEnded)return;
+  defeatPending=true;
+  setTimeout(()=>{defeatPending=false;endGame(winner);},780);
+}
 function dmgHero(pi,n,silent,direct){
   const p=G.players[pi];
   if(DEFER_POPS&&!silent){silent=true;DEFERRED_PI=pi;DEFERRED_HIT+=n;}
@@ -8236,7 +8264,7 @@ function dmgHero(pi,n,silent,direct){
   dbg('hp','P'+pi+(pi===ME?'(you)':'(foe)')+' -'+n+'  '+before+'→'+G.players[pi].hp+
     (silent?'  [number deferred to card landing]':'  [number pops now]'));
   if(!silent)popNumber(pi,'-'+n,false,n);
-  if(G.players[pi].hp<=0){G.players[pi].hp=0;endGame(1-pi);}
+  if(G.players[pi].hp<=0){G.players[pi].hp=0;checkDefeat(pi,1-pi);}
 }
 function healHero(pi,n){
   const cap=G.players[pi].maxHp||MAXHP;
@@ -9186,8 +9214,17 @@ function aiTurn(){
     // The AI used to act on a flat timer, so on a busy roll it could attack
     // before your own draw reveal had finished — you'd see the damage, then
     // find out what you drew. Wait for the reveal queue to drain first.
+    //
+    // THE REPORTED BUG: on a 7, this check never looked at whether the
+    // "too many cards" discard overlay was open. showBusy/showQ/revealWait
+    // all describe animation state, not "the human is staring at a full-
+    // screen modal they cannot get out of" — so the AI's attack sequence
+    // (and the block-prompt stage it can open) started underneath a modal
+    // the player had no way to dismiss or interact around. discardDone is
+    // non-null for exactly the window the discard overlay is open (see
+    // openDiscard/its OK button), so it is the right flag to gate on.
     const actAfterReveal=(fn)=>{
-      const ready=!showBusy&&!showQ.length&&revealWait()<=0;
+      const ready=!showBusy&&!showQ.length&&revealWait()<=0&&!discardDone;
       if(ready){setTimeout(fn,600);return;}
       setTimeout(()=>actAfterReveal(fn),160);
     };
@@ -9265,6 +9302,12 @@ function aiTurn(){
 }
 function aiAttack(){
   if(G.phase==='over')return;
+  // checkDefeat's own delay (780ms) is longer than this loop's own
+  // reschedule gap (620ms) — without this, a kill via one attack could let
+  // a SECOND attack sneak in before the Defeat screen actually arrives.
+  // G.phase isn't 'over' yet during that gap on purpose (see checkDefeat),
+  // so this checks the human's hp directly instead.
+  if(G.players[ME].hp<=0)return;
   const p=G.players[FOE];
   // BATTLE SYSTEM: do not dump the whole hand. A player who spends every card
   // attacking has nothing to block with on the opponent's turn, and no amount
