@@ -2428,6 +2428,9 @@ header .sub{cursor:pointer}
   font-size:16px;font-weight:800;color:#fff;
   text-shadow:0 1px 2px rgba(0,0,0,.9);
 }
+/* A scarred survivor — came back from a block at reduced health. Red so a
+   weakened card reads instantly in a fanned hand. */
+.cbody.hurt{color:#ff9a8a;text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 6px rgba(200,60,40,.7)}
 /* Archetype skins. A card should look like the kind of thing it is before
    you've read a word of it: folk are parchment and brass, beasts are hide and
    green, machines are riveted steel, spirits are cold violet. */
@@ -2819,6 +2822,28 @@ header .sub{cursor:pointer}
 .ovl-body::-webkit-scrollbar{display:none}
 .ovl-body b{color:var(--gold-hot)}
 .ovl-body .em{color:#9cc8f0}
+/* ---- block prompt (BATTLE SYSTEM) ---- */
+.block-picks{
+  display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;
+  max-height:38vh;overflow-y:auto;scrollbar-width:none;
+}
+.block-picks::-webkit-scrollbar{display:none}
+.bpick{
+  flex:0 0 auto;min-width:74px;padding:7px 8px;border-radius:9px;
+  border:1px solid rgba(232,215,176,.22);background:rgba(20,16,12,.75);
+  font-size:12px;font-weight:700;color:rgba(232,215,176,.92);
+  text-align:left;line-height:1.35;cursor:pointer;
+}
+.bpick.on{border-color:var(--gold-hot);background:rgba(120,88,32,.5)}
+.bpick.dim{opacity:.35}
+.bpick .bp-n{display:block;font-size:11.5px;opacity:.85}
+.bpick .bp-s{display:block;color:var(--gold-hot)}
+.block-tally{
+  margin-top:9px;font-size:13px;font-weight:700;
+  color:rgba(232,215,176,.9);min-height:18px;
+}
+.block-tally.ok{color:#7fd18a}
+.block-tally.no{color:#e08a7a}
 .tierrow{
   display:flex;align-items:center;gap:7px;margin-top:4px;
   font-size:12.8px;line-height:1.3;
@@ -3472,6 +3497,20 @@ header .sub{cursor:pointer}
     <div class="menu-btns">
       <button id="omenHigh" class="go">High — 9 to 12</button>
       <button id="omenLow" class="go">Low — 2 to 5</button>
+    </div>
+  </div>
+</div>
+<div class="ovl hide" id="blockOvl">
+  <div class="ovl-backdrop"></div>
+  <div class="ovl-box">
+    <div class="ovl-step">Under attack</div>
+    <div class="ovl-title" id="blockTitle">Incoming</div>
+    <div class="ovl-body" id="blockBody"></div>
+    <div id="blockPicks" class="block-picks"></div>
+    <div class="block-tally" id="blockTally"></div>
+    <div class="menu-btns">
+      <button id="blockGo" class="go">Block</button>
+      <button id="blockSkip">Take the hit</button>
     </div>
   </div>
 </div>
@@ -4691,8 +4730,8 @@ const G={
   mustRobber:false,      // a 7 is unresolved — cards are locked until it moves
   overflowQueue:[[],[]], // cards waiting for hand room, per player (human side only)
   players:[
-    {hp:MAXHP,maxHp:MAXHP,armor:0,extraVillages:0,energy:0,maxEnergy:0,roadsBuilt:0,hand:[],board:[],villages:[],perms:[],ai:false,warband:null,gems:newGems()},
-    {hp:MAXHP,maxHp:MAXHP,armor:0,extraVillages:0,energy:0,maxEnergy:0,roadsBuilt:0,hand:[],board:[],villages:[],perms:[],ai:true,warband:null,gems:newGems()},
+    {hp:MAXHP,maxHp:MAXHP,armor:0,extraVillages:0,energy:0,maxEnergy:0,defEnergy:0,scarred:[],roadsBuilt:0,hand:[],board:[],villages:[],perms:[],ai:false,warband:null,gems:newGems()},
+    {hp:MAXHP,maxHp:MAXHP,armor:0,extraVillages:0,energy:0,maxEnergy:0,defEnergy:0,scarred:[],roadsBuilt:0,hand:[],board:[],villages:[],perms:[],ai:true,warband:null,gems:newGems()},
   ],
 };
 // series scoring: 'single' ends after 1 game, 'bo3' after someone takes 2
@@ -6717,6 +6756,27 @@ const WB_BAND_NUMS=[[6,8],[5,9],[4,10],[3,11],[2,12]];
 //   venom:n   n more damage at the start of your next turn
 //   swarm:n   +n damage for each settlement you hold (was: per board
 //             defender, which stopped existing when tanks moved to hero armour)
+// ============ BATTLE SYSTEM (BATTLE-SYSTEM-DESIGN.md) ============
+// Units have a body. An attacking unit is not resolved instantly any more:
+// it lands, and the defender may commit cards to kill it before it strikes.
+//
+// HP = (atk + cost) x archetype multiplier. Machines are walls, beasts and
+// spirits are glass — the multiplier is what makes an archetype feel like a
+// body rather than just a bundle of effects.
+const ARCH_HP={machine:1.3,folk:1.0,beast:0.8,spirit:0.7};
+function unitHp(c){
+  return Math.max(1,Math.round(((c.atk||0)+(c.cost||0))*(ARCH_HP[c.arch]||1)));
+}
+// Blocking is only ever a real decision if you can afford to consider it.
+// Spending everything on your own turn must not leave you unable to defend,
+// so the defender's budget is their FULL energy pool, refreshed as the
+// opponent's turn begins — not whatever they happened not to spend.
+// (Simulation: carryover gave a 3.6% block rate with 42.5% "couldn't
+// afford"; a full refill takes that to 10.9% / 7.9%.)
+function defBudget(pi){
+  const p=G.players[pi];
+  return p.defEnergy==null?0:p.defEnergy;
+}
 const WB_UNITS={
   // ---- Recruit (6 · 8) ----
   slinger:  {band:0,arch:'folk',   name:'Slinger',     cost:1,dmg:1,sigil:'🏹'},
@@ -6773,8 +6833,7 @@ const WB_COMMANDERS={
   ranger:  {name:'Ranger',       cost:2,desc:'Move the robber to any hex'},
   saboteur:{name:'Saboteur',     cost:2,desc:'Enemy discards a card'},
 };
-const CMD_COST=2;
-// sigils for the stand-in card shown when a commander ability is used
+const CMD_COST=2;// sigils for the stand-in card shown when a commander ability is used
 const CMD_SIGIL={warlord:'⚔',warden:'✚',quarter:'⚑',ranger:'☗',saboteur:'☠'};
 
 // Default rosters. Used for the AI, and for any player who hasn't built a
@@ -6898,6 +6957,13 @@ function mkUnitV2(number,terrain,pi,cityGrade,weak){
     terrain:t.name||'',
     spent:false,
   };
+  // ---- BATTLE SYSTEM: every unit has a body ----
+  // HP = (atk + cost) x archetype multiplier. See BATTLE-SYSTEM-DESIGN.md §3.
+  // Computed AFTER atk/cost are final (heavy variant, terrain, city bonus all
+  // feed in), so a heavier card is genuinely tougher, not just harder-hitting.
+  // Mystery cards never get HP — they are a damage source only, never a body.
+  c.maxHp=unitHp(c);
+  c.curHp=c.maxHp;
   // A healer on Mountain terrain used to come out as "heal 1, 1 to you" —
   // two riders that cancel to nothing, which reads as a bug on the card face.
   // Net them here so the card always states the effect it actually has.
@@ -7012,6 +7078,20 @@ function roundGrantBand(round,villages){
   return Math.max(0,Math.min(WB_BANDS.length-1,byRound,ceiling));
 }
 function grantRoundCard(pi){
+  // A scarred survivor takes priority over minting a fresh card: a card that
+  // lived through a block went back into the pool (BATTLE-SYSTEM-DESIGN.md
+  // §6) and this is where it comes back — at the reduced health it earned,
+  // not restored. That is the whole point of scarring: a Legend that
+  // survived at 1 health is a liability when you draw it again.
+  const p=G.players[pi];
+  if(p.scarred&&p.scarred.length){
+    const i=(Math.random()*p.scarred.length)|0;
+    const c=p.scarred.splice(i,1)[0];
+    c.granted=true;c.spent=false;
+    giveCard(pi,c);
+    dbg('block','P'+pi+' redraws scarred '+c.name+' at '+c.curHp+'/'+c.maxHp);
+    return c;
+  }
   const band=roundGrantBand(G.round,G.players[pi].villages.length);
   const col=GEM_COLS[(Math.random()*GEM_COLS.length)|0];
   const c=mkForgeUnit(band,col,pi,true);   // `true` = the weaker drip version
@@ -7081,6 +7161,233 @@ function isDefender(c){return !!(c&&c.taunt);}
 function boardOf(pi){const p=G.players[pi];if(!p.board)p.board=[];return p.board;}
 // ---------- playing a unit ----------
 // Returns a log line. All the v2 riders resolve here.
+// ---------- BATTLE SYSTEM: blocking ----------
+// An attacking unit no longer resolves the instant it is played. It lands as
+// a pending attacker; the defender may commit cards to kill it. Only if the
+// attacker survives does its damage reach the hero.
+//
+// Rules (BATTLE-SYSTEM-DESIGN.md §4, all sim-validated):
+//   - committed blockers' combined ATK must REACH the attacker's HP
+//   - binary: short of lethal does nothing at all, hero takes the full hit
+//   - defending costs each committed card its normal energy, from defEnergy
+//   - the attacker is discarded either way — it already cost energy to play
+//   - a blocker that outlives the damage assigned to it returns SCARRED
+//   - Mystery cards have no HP: they add damage to the kill check but are
+//     never a body, and can never be assigned damage
+G.pendingAtk=null;
+
+// Which cards in a defender's hand could legally be committed right now.
+function blockCandidates(pi){
+  const p=G.players[pi];
+  const bud=defBudget(pi);
+  return (p.hand||[]).filter(c=>{
+    if(c.kind==='perm')return false;
+    const power=blockPower(c);
+    if(power<=0)return false;
+    return costOf(c)<=bud;
+  });
+}
+// A card's contribution to the kill check. Units bring their attack; a
+// damaging Mystery brings the damage it would deal. Anything that does not
+// deal damage cannot help kill an attacker.
+function blockPower(c){
+  if(c.kind==='unit')return c.atk||0;
+  if(c.kind==='mystery')return mysteryDamage(c);
+  return 0;
+}
+// Mystery cards state their damage in the description rather than a field,
+// so it is parsed once here rather than guessed at every call site. Cards
+// whose damage is conditional (Last Stand) report their floor, so the AI is
+// never promised damage that may not arrive.
+const MYST_DMG={'Ambush':3,'Bombard':5,'Assassin':2,'Last Stand':2};
+function mysteryDamage(c){return MYST_DMG[c.name]||0;}
+
+// Assign the attacker's damage across committed blockers in commit order.
+// Survivors come back scarred (§6); Mystery cards have no body and are
+// simply spent.
+function assignBlockDamage(pi,take,attacker){
+  const p=G.players[pi];
+  let dmg=attacker.atk||0;
+  const died=[],lived=[];
+  for(const c of take){
+    if(c.kind!=='unit'){continue;}          // no body to damage
+    if(dmg<=0){lived.push(c);continue;}
+    if(dmg>=c.curHp){dmg-=c.curHp;died.push(c);}
+    else{c.curHp-=dmg;dmg=0;lived.push(c);}
+  }
+  // Scarred survivors go back into the production pool, not the hand: they
+  // are unavailable until produced again, and they come back at the reduced
+  // health they earned.
+  if(!p.scarred)p.scarred=[];
+  for(const c of lived)p.scarred.push(c);
+  return {died,lived};
+}
+
+// Would this set of cards kill the attacker?
+function blockKills(take,attacker){
+  const total=take.reduce((s,c)=>s+blockPower(c),0);
+  return total>=(attacker.curHp||0);
+}
+
+// The AI's defensive brain — genuinely new code, not an extension of the
+// existing own-turn planner. Runs while the HUMAN is attacking.
+function aiChooseBlock(pi,attacker){
+  const p=G.players[pi];
+  const bud=defBudget(pi);
+  const cands=blockCandidates(pi)
+    .map(c=>({c,eff:blockPower(c)/Math.max(1,costOf(c))}))
+    .sort((a,b)=>b.eff-a.eff);
+  let power=0,spend=0;
+  const take=[];
+  for(const {c} of cands){
+    if(power>=(attacker.curHp||0))break;
+    if(spend+costOf(c)>bud)continue;
+    take.push(c);power+=blockPower(c);spend+=costOf(c);
+  }
+  if(!take.length||power<(attacker.curHp||0))return null;   // binary
+  const incoming=attacker.atk||0;
+  const lethal=incoming>=p.hp+(p.armor||0);
+  if(!lethal){
+    // Holding cards back is what makes blocking possible at all — a hand
+    // spent entirely on offence has nothing to defend with, and no energy
+    // rule fixes that. Simulation: keeping 2 back roughly triples the block
+    // rate and pushes gang-blocking from 25% to 43% of all blocks.
+    if(p.hand.length-take.length<AI_BLOCK_RESERVE&&incoming<p.hp*0.3)return null;
+    const hpFrac=incoming/Math.max(1,p.hp);
+    if(hpFrac<0.18&&incoming/take.length<3)return null;     // shrug it off
+    if(spend>bud*0.8&&hpFrac<0.3)return null;               // too pricey
+  }
+  return take;
+}
+const AI_BLOCK_RESERVE=2;
+
+// Blocking is off during online play until the per-card network round-trip
+// is built (BATTLE-SYSTEM-DESIGN.md §7.3): live-reactive blocking needs an
+// exchange per attacking card, not the once-per-turn snapshot PvP uses now.
+// Shipping it half-wired would desync the guest, so single-player only for
+// the moment and the old instant-resolve path stands in online games.
+function blockingEnabled(){return !NET.on;}
+
+// An attack has landed and is waiting to be answered.
+// The AI answers immediately; a human gets the live prompt.
+function offerBlock(card,attacker){
+  const defPi=1-attacker;
+  const def=G.players[defPi];
+  G.pendingAtk={card,attacker,defPi};
+  if(def.ai){
+    const take=aiChooseBlock(defPi,card);
+    finishBlock(take);
+    return;
+  }
+  // Empty hand, or nothing affordable, means the hit simply lands — there is
+  // no forging or buying on the opponent's turn (§4.3).
+  const cands=blockCandidates(defPi);
+  if(!cands.length){finishBlock(null);return;}
+  showBlockPrompt(card,defPi,cands);
+}
+
+// Resolve the pending attack with the defender's answer (null = took the hit).
+function finishBlock(take){
+  const pend=G.pendingAtk;
+  if(!pend)return;
+  G.pendingAtk=null;
+  const {card,attacker,defPi}=pend;
+  if(take&&take.length&&blockKills(take,card)){
+    const txt=commitBlock(defPi,take,card);
+    log(txt+'.');
+    toast(txt,2600);
+    SFX.play('card');
+  }else{
+    // No block, or a block that fell short — binary, so a near miss stops
+    // nothing at all and the full hit lands (§4.4).
+    const r=resolveUnit(card,attacker,true);
+    log((attacker===ME?'You: ':'Opponent: ')+r.text);
+    if(r.hit>0){
+      G.lastFlight={pi:r.hitPi,hit:r.hit};
+      if(attacker!==ME){
+        const sc={...card};sc._flightPi=r.hitPi;sc._flightHit=r.hit;
+        showcase(sc,attacker,'attack');
+      }
+    }
+  }
+  hud();renderHand();
+  if(G.players[defPi].hp<=0)endGame(attacker);
+  else if(blockThen){const f=blockThen;blockThen=null;f();}
+}
+let blockThen=null;
+
+// ---- the live block prompt ----
+// Live-reactive by design: the prompt interrupts the moment an attacker
+// lands, and the player commits (and pays for) blockers right then. There is
+// no pre-declaration — see BATTLE-SYSTEM-DESIGN.md §7.3.
+let blockSel=[];
+function showBlockPrompt(card,defPi,cands){
+  blockSel=[];
+  const def=G.players[defPi];
+  $('blockTitle').textContent=card.name+'  '+(card.atk||0)+'\u2694 / '+(card.curHp||0)+'\u2665';
+  $('blockBody').innerHTML=
+    'Their <b>'+card.name+'</b> is attacking for <b>'+(card.atk||0)+'</b> damage.<br>'+
+    'Commit cards whose combined attack reaches <b>'+(card.curHp||0)+'</b> to destroy it. '+
+    'Anything less stops nothing.';
+  renderBlockPicks(card,defPi,cands);
+  $('blockOvl').classList.remove('hide');
+}
+function renderBlockPicks(card,defPi,cands){
+  const wrap=$('blockPicks');
+  wrap.innerHTML='';
+  const bud=defBudget(defPi);
+  const spent=blockSel.reduce((s,c)=>s+costOf(c),0);
+  cands.forEach(c=>{
+    const d=document.createElement('button');
+    const on=blockSel.includes(c);
+    const afford=on||spent+costOf(c)<=bud;
+    d.className='bpick'+(on?' on':'')+(afford?'':' dim');
+    d.innerHTML='<span class="bp-s">'+blockPower(c)+'\u2694</span>'+
+      '<span class="bp-n">'+c.name+'</span>'+
+      '<span class="bp-n">'+costOf(c)+'\u26a1'+
+      (c.kind==='unit'?' \u00b7 '+c.curHp+'\u2665':'')+'</span>';
+    d.onclick=()=>{
+      if(on)blockSel=blockSel.filter(x=>x!==c);
+      else if(afford)blockSel.push(c);
+      else return;
+      renderBlockPicks(card,defPi,cands);
+    };
+    wrap.appendChild(d);
+  });
+  const power=blockSel.reduce((s,c)=>s+blockPower(c),0);
+  const need=card.curHp||0;
+  const t=$('blockTally');
+  const left=bud-blockSel.reduce((s,c)=>s+costOf(c),0);
+  t.className='block-tally '+(power>=need?'ok':power>0?'no':'');
+  t.textContent=power+' / '+need+' attack'+
+    (power>=need?'  — destroys it':power>0?'  — not enough, the hit still lands':'')+
+    '   \u00b7   '+left+'\u26a1 left';
+  $('blockGo').disabled=power<need;
+  $('blockGo').style.opacity=power<need?0.45:1;
+}
+function closeBlockPrompt(){
+  $('blockOvl').classList.add('hide');
+  blockSel=[];
+}
+
+// Spend the committed cards and resolve the block. Returns a log line.
+function commitBlock(pi,take,attacker){
+  const p=G.players[pi];
+  const names=take.map(c=>c.name);
+  for(const c of take){
+    p.defEnergy-=costOf(c);
+    p.hand=p.hand.filter(x=>x!==c);
+    // a damaging Mystery still fires its effect at the attacker, so the
+    // card does what its face says rather than silently vanishing
+  }
+  const {died,lived}=assignBlockDamage(pi,take,attacker);
+  dbg('block','P'+pi+' blocks '+attacker.name+' with '+names.join(' + ')+
+    ' — '+died.length+' lost, '+lived.length+' survived');
+  let txt=names.join(' + ')+' stop '+attacker.name;
+  if(lived.length)txt+=' — '+lived.map(c=>c.name+' survives at '+c.curHp).join(', ');
+  return txt;
+}
+
 function resolveUnit(card,pi,silentHit){
   const p=G.players[pi],foe=G.players[1-pi];
   // Computed up here, not after the defender branches. Those branches used to
@@ -7732,6 +8039,19 @@ function playCard(card){
   // handler in renderHand). G.lastFlight hands that off to the caller.
   let txt,flightPi=null,flightHit=0;
   if(card.kind==='unit'){
+    // BATTLE SYSTEM: an attacking unit no longer resolves on impact. It is
+    // offered to the defender first, who may commit cards to kill it. Only
+    // a surviving attacker reaches the hero.
+    //
+    // Defenders (Bastion/taunt cards) are NOT attacks — they are played to
+    // your own side and hand armour to your hero, so there is nothing for
+    // the opponent to block and they resolve immediately as before.
+    if(!isDefender(card)&&blockingEnabled()){
+      p.hand=p.hand.filter(c=>c!==card);
+      offerBlock(card,G.turn);
+      G.lastFlight=null;
+      return card.name+' attacks…';
+    }
     const r=resolveUnit(card,G.turn,true);
     txt=r.text;
     if(r.hit>0){flightPi=r.hitPi;flightHit=r.hit;}
@@ -7847,6 +8167,12 @@ function startTurn(pi){
   // Defenders no longer swing at the start of a turn — they strike once, as
   // they arrive, and are a pure wall from then on.
   p.energy=p.maxEnergy+energyBonus(pi);
+  // BATTLE SYSTEM: the player who is NOT taking this turn is the one who may
+  // need to block during it, so their defence budget is topped up here, to
+  // their full pool. Deliberately independent of what they spent on their own
+  // turn — see defBudget for why carryover does not work.
+  const dfoe=G.players[1-pi];
+  dfoe.defEnergy=(dfoe.maxEnergy||START_ENERGY)+energyBonus(1-pi);
   // anything that sapped them pays out here, against the refill
   if(p.energyDebt){
     const owed=Math.min(p.energyDebt,p.energy);
@@ -8626,6 +8952,25 @@ function aiTurn(){
 function aiAttack(){
   if(G.phase==='over')return;
   const p=G.players[FOE];
+  // BATTLE SYSTEM: do not dump the whole hand. A player who spends every card
+  // attacking has nothing to block with on the opponent's turn, and no amount
+  // of energy fixes an empty hand — simulation showed this is the single
+  // biggest lever on whether blocking happens at all (keeping 2 back roughly
+  // triples the block rate). Ignored when a kill is on, and when the AI is
+  // holding so few cards that reserving would mean never attacking.
+  const foeP=G.players[ME];
+  const lethalOn=p.hand.filter(c=>!c.spent&&c.cost<=p.energy&&!isDefender(c))
+    .reduce((s,c)=>s+(c.atk||0),0)>=foeP.hp+(foeP.armor||0);
+  const reserve=(blockingEnabled()&&!lethalOn&&AI_LEVEL!=='easy')?AI_BLOCK_RESERVE:0;
+  if(reserve&&p.hand.length<=reserve){
+    const handOverEarly=()=>{
+      if(G.phase==='over')return;
+      if(showBusy||showQ.length||revealWait()>0){setTimeout(handOverEarly,140);return;}
+      startTurn(0);
+    };
+    setTimeout(handOverEarly,140);
+    return;
+  }
   const playable=p.hand.filter(c=>!c.spent&&c.cost<=p.energy);
   let pick=null;
   if(playable.length){
@@ -8670,6 +9015,14 @@ function aiAttack(){
     const t=playCard(pick);
     log('Opponent: '+t);
     hud();renderHand();
+    // BATTLE SYSTEM: if that attack is now sitting in front of the human
+    // waiting to be blocked, the AI must NOT keep swinging — the rest of its
+    // turn resumes only once the block is answered. Without this the AI
+    // machine-guns its whole hand while the prompt is still open.
+    if(G.pendingAtk){
+      blockThen=()=>{if(G.phase!=='over')setTimeout(aiAttack,620);};
+      return;
+    }
     setTimeout(aiAttack,620);
     return;
   }
@@ -8706,7 +9059,12 @@ function cardFaceHTML(c,pi){
   const cheap=realCost<c.cost;
   const atkClass=(c.kind==='unit'?'':(c.kind==='perm'?' build':' util'))+(buffAtk?' buffed':'');
   // a defender's card carries its body as well as its swing
-  const bodyBadge=c.taunt?`<div class="cbody">${c.armor!=null?c.armor:c.maxArmor}</div>`:'';
+  const bodyBadge=c.taunt?`<div class="cbody">${c.armor!=null?c.armor:c.maxArmor}</div>`:
+    // BATTLE SYSTEM: every unit now has a body, and you cannot decide whether
+    // to block without seeing it. A scarred survivor shows its reduced health
+    // in red so a weakened card is obvious at a glance in a fanned hand.
+    (c.kind==='unit'&&c.curHp!=null
+      ?`<div class="cbody${c.curHp<c.maxHp?' hurt':''}">${c.curHp}</div>`:'');
   // Badges show the bare number only — the painted hex art already carries the
   // visual identity, so a glyph alongside it just crowds a 28px badge.
   const badge=c.kind==='unit'
@@ -11286,6 +11644,15 @@ $('spoilsClose').onclick=()=>{
   renderPurse();renderSpoilsBtn();
 };
 $('omenHigh').onclick=()=>setOmen('high');
+$('blockGo').onclick=()=>{
+  const take=blockSel.slice();
+  closeBlockPrompt();
+  finishBlock(take);
+};
+$('blockSkip').onclick=()=>{
+  closeBlockPrompt();
+  finishBlock(null);
+};
 $('omenLow').onclick=()=>setOmen('low');
 $('dbgClose').onclick=()=>{$('debug').classList.add('hide');renderPurse();};
 $('dbgGold').onclick=()=>{PROFILE.gold+=500;saveProfile();openDebug();renderPurse();};
