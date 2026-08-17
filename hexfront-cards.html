@@ -1563,23 +1563,26 @@ body.land .hperms{max-width:100%}
 body.land .plate.you .plate-extra{order:4}
 body.land .plate .plate-extra{position:static;left:auto;right:auto;top:auto;bottom:auto}
 
-/* Right rail: gems on top, action buttons beneath. */
-/* The old bare .gemstrip was just floating hexes with no frame — asked for
-   its own bar, so it gets one: a real panel with a background, border and
-   label, replacing the position the strip used to hold on its own. */
+/* Redesigned as ONE horizontal row along the top of the right edge —
+   deliberately NOT sharing the narrow bottom-anchored rail with
+   forge/mystery/end any more. The old 2x3 grid lived inside that rail and
+   needed --gemMaxH/--railR arithmetic (still published by layout(), just
+   unused here now) purely to avoid growing tall enough to reach the
+   buttons below. Docking the strip to the TOP instead — right under the
+   help/costs/mute/log icon row, same top offset those already clear —
+   makes that whole clearance problem structurally impossible rather than
+   carefully avoided: gems and buttons now occupy opposite ends of the
+   screen and can never meet, regardless of hand size or content length.
+   Width is fit-content instead of the rail's fixed --railR, so it is
+   exactly as wide as six small hexes need and no wider. */
 body.land .gempanel{
   position:absolute;left:auto;right:0;
   top:calc(38px + var(--insetT,env(safe-area-inset-top)));
-  width:var(--railR);
+  width:auto;max-width:none;
   background:linear-gradient(180deg,rgba(30,18,8,.75),rgba(14,8,3,.82));
   border:1px solid rgba(224,179,72,.28);
   border-right:none;border-radius:8px 0 0 8px;
-  /* Same reduction as .endbtn's `right`, same reason: this panel's OWN
-     background/border already reaches the true edge (right:0 above) — it's
-     only the gem tiles INSIDE it, via this padding, that were sitting a
-     full inset-width short of that edge, flagged directly as "the gems bar
-     should move closer to the edge too" alongside the buttons. */
-  padding:4px calc(4px + var(--insetR,env(safe-area-inset-right)) * 0.25) 5px 4px;
+  padding:4px calc(6px + var(--insetR,env(safe-area-inset-right)) * 0.25) 5px 6px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 3px 10px rgba(0,0,0,.35);
 }
 body.land .gempanel-label{
@@ -1589,39 +1592,10 @@ body.land .gempanel-label{
 }
 body.land .gemstrip{
   position:static;left:auto;right:auto;bottom:auto;width:auto;
-  /* Was justify-content:flex-end on a flex-wrap row, sized by a JS-computed
-     --gemW meant to land exactly 3-per-row. THE BUG (from a device photo):
-     the third gem in every row was clipped clean off by the panel's own
-     edge, and the LEG/REC labels hung down well below their hexes. Both
-     point at the same root cause — --gemW as actually applied in the
-     browser didn't match what layout() had computed it to be, so "3 gems
-     at exactly this many px" and "the panel is exactly that many px wide"
-     stopped agreeing. flex+computed-px can only ever be as correct as that
-     one JS number; if it's ever stale, missing, or off by a fraction for
-     any reason, nothing else in the layout can notice or correct it.
-     CSS GRID removes the number entirely for the axis that broke: N equal
-     columns are *defined* as "however much space is actually left", so
-     they can't fail to sum to the container's real width — there is no
-     separate JS estimate to drift out of sync with.
-     3 columns (2 rows) -> 2 columns (3 rows), asked for directly, at the
-     same time the craft button was pulled out of this grid entirely (see
-     renderGemStrip() — it's a standalone element now, not a 7th grid
-     item). With exactly 6 real gem colours and nothing else sharing the
-     grid, 2x3 divides evenly with no partial row either way — same
-     exact-fit guarantee as before, just reshaped. */
-  display:grid;grid-template-columns:repeat(2,1fr);align-content:flex-start;
-  gap:var(--gemGap);padding:0;
-  /* Hard ceiling on how far down the strip may reach, published by layout()
-     from the action buttons' own real height. The panel is pinned by its TOP
-     and the buttons by their BOTTOM, so without this there is nothing in the
-     layout that prevents them meeting — and with the rail squeezed by the
-     inset bug they did, badly. A scroll here is the right failure mode: the
-     gems stay readable and the buttons stay tappable, instead of one
-     silently painting over the other. */
-  max-height:var(--gemMaxH,none);
-  overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  /* ONE row, six across, never wraps — the whole point of this pass. */
+  display:flex;flex-wrap:nowrap;align-items:flex-end;
+  gap:4px;padding:0;
 }
-body.land .gemstrip::-webkit-scrollbar{display:none}
 /* Sized off --railBase (0.24x) rather than a fixed px, same pattern as the
    hero cluster badges — a flat bump looked good on a typical phone but
    overflowed the smallest tested rail (7 items need 3 rows even at 3-per-
@@ -1640,28 +1614,14 @@ body.land .gemstrip::-webkit-scrollbar{display:none}
    every rail width and every inset, instead of true-at-the-sizes-tested. */
 body.land{ --gemGap:2px; }   /* 4 -> 2px, asked for the segments to sit closer together */
 body.land .gseg{
-  /* width:100% of the grid's own 1fr column — always exactly right, by
-     construction, instead of a separate px number that has to happen to
-     match. aspect-ratio keeps the hex proportioned without needing an
-     explicit height either. --gemW is still used for FONT size (a rough
-     visual target is fine there — text doesn't need to be pixel-exact the
-     way a box edge does to avoid clipping), with a sane fallback in case
-     it's ever missing so a badge always at least renders instead of
-     collapsing to font-size:0.
-     88% -> 70%: asked for the gems to read smaller, in an earlier session.
-     70% -> 47%: the grid went from 3 columns to 2 this session (asked for
-     directly, alongside removing the craft button from it), which makes
-     each CELL half again as wide — at the same 70% factor the tiles would
-     have visually grown by a third, undoing the earlier size request as a
-     side effect of an unrelated reshape. 47% keeps the tile's own absolute
-     size where it was (0.70 * width/3 ≈ 0.47 * width/2): the reshape only
-     changes how the 6 tiles are grouped into rows, not how big any one of
-     them reads. Capping the tile below its cell and centring it
-     (justify-self) keeps the exact-fit grid guarantee regardless of either
-     number — the CELL is still exactly its fair share of the row, so
-     nothing can overflow. */
-  width:47%;aspect-ratio:1 / 1.15;height:auto;justify-self:center;
-  font-size:calc(var(--gemW,44px) * 0.26);
+  /* Sizing used to be a fraction of the grid CELL (a 1fr column, so it
+     scaled with --railR). There is no grid any more — one flex row, fixed
+     item size — so this is a straightforward clamped px value instead: big
+     enough to read on any phone, small enough that six of them plus gaps
+     and padding never exceed a comfortable strip width. aspect-ratio keeps
+     the hex proportioned without a separate explicit height. */
+  width:clamp(22px,6.2vw,30px);aspect-ratio:1 / 1.15;height:auto;
+  font-size:clamp(9px,2.1vw,12.5px);
 }
 /* Font/padding were fixed regardless of viewport — width already scaled
    with the rail (via --railR) but text stayed phone-sized inside a button
@@ -2900,6 +2860,24 @@ body.land .as-tally{font-size:12.5px}
 .as-tally.hide{display:none}
 .as-tally.ok{color:#7fd18a}
 .as-tally.no{color:#e08a7a}
+/* The clash reveal: what stopped YOUR attack. Same stage, same visual
+   weight as when the opponent attacks you — the whole point was that a
+   block against your own card was invisible before this, and reusing the
+   exact real estate the other direction already uses makes it read as the
+   same kind of event rather than a different, lesser one. */
+.as-blockers{
+  display:flex;gap:8px;justify-content:center;flex-wrap:wrap;
+  pointer-events:none;
+}
+.as-blockers.hide{display:none}
+.as-blockers .card{
+  transform:scale(.62);margin:-14px;cursor:default;
+  filter:drop-shadow(0 4px 12px rgba(0,0,0,.6));
+}
+#atkStage.clash .as-card .card{animation:none}   /* the attacker already lost — no pulse */
+#atkStage.clash .as-veil{
+  background:linear-gradient(180deg,rgba(8,5,3,.88) 55%,rgba(8,5,3,0));
+}
 .as-committed{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;pointer-events:auto}
 .as-chip{
   padding:5px 9px;border-radius:8px;cursor:pointer;
@@ -3585,6 +3563,7 @@ body.land .as-tally{font-size:12.5px}
   <div class="as-inner" id="asInner">
     <div class="as-label" id="asLabel">Opponent attacks</div>
     <div class="as-card" id="asCard"></div>
+    <div class="as-blockers hide" id="asBlockers"></div>
     <div class="as-tally hide" id="asTally"></div>
     <div class="as-committed" id="asCommitted"></div>
   </div>
@@ -7390,12 +7369,11 @@ function finishBlock(take){
     const txt=commitBlock(defPi,take,card);
     log(txt+'.');
     // A block the attacker cannot SEE is indistinguishable from their card
-    // doing nothing. When the opponent defends against you, their blockers
-    // are revealed the same way their plays are — otherwise your attack just
-    // silently fails and the game looks broken.
+    // doing nothing. When the opponent defends against you, show it with
+    // the same weight their attacks on you get — the big stage, not a small
+    // corner reveal — so it reads as the same kind of event either way.
     if(defPi!==ME){
-      showcase({...card},1-defPi,'blocked');
-      take.forEach(bc=>showcase({...bc},defPi,'block'));
+      showClash(card,take);
     }else{
       toast(txt,2600);
     }
@@ -7539,7 +7517,7 @@ function stageCommit(c){
 function closeBlockPrompt(){
   const st=$('atkStage');
   st.classList.add('hide');
-  st.classList.remove('armed','target','overtarget');
+  st.classList.remove('armed','target','overtarget','clash');
   blockSel=[];
   $('buyBtnPanel').classList.remove('hide');
   $('hpTakeHit').classList.add('hide');
@@ -7548,6 +7526,37 @@ function closeBlockPrompt(){
   // the rest of the opponent's turn — but leave it alone on your own turn,
   // where the player controls it themselves.
   if(G.turn!==ME&&G.handOpen)closeHandPanel();
+}
+
+// The other direction of the same event: YOUR attack, blocked. Reuses the
+// exact same stage real estate the opponent's attacks use against you, so a
+// block against your card reads as the same kind of thing rather than a
+// smaller, easy-to-miss one. Purely a reveal — no G.pendingAtk, no hand
+// panel, nothing to interact with, auto-dismisses on its own.
+function showClash(attackerCard,blockerCards){
+  const st=$('atkStage');
+  st.classList.remove('hide');
+  st.classList.add('clash');
+  $('asLabel').textContent='Opponent blocks!';
+  $('asCard').innerHTML='<div class="card '+attackerCard.kind+
+    (attackerCard.kind==='unit'&&attackerCard.arch?' a-'+attackerCard.arch:'')+'">'+
+    cardFaceHTML(attackerCard,ME)+'</div>';
+  const bw=$('asBlockers');
+  bw.classList.remove('hide');
+  bw.innerHTML=blockerCards.map(c=>
+    '<div class="card '+c.kind+(c.kind==='unit'&&c.arch?' a-'+c.arch:'')+'">'+
+    cardFaceHTML(c,1-ME)+'</div>').join('');
+  $('asTally').classList.add('hide');
+  fitStageCard();
+  clearTimeout(showClash._t);
+  showClash._t=setTimeout(dismissClash,1700);
+}
+function dismissClash(){
+  const st=$('atkStage');
+  st.classList.add('hide');
+  st.classList.remove('clash');
+  $('asBlockers').classList.add('hide');
+  $('asBlockers').innerHTML='';
 }
 
 // Spend the committed cards and resolve the block. Returns a log line.
@@ -10249,6 +10258,13 @@ function renderHand(){
           const was=d.classList.contains('inspect');
           h.querySelectorAll('.card.inspect').forEach(x=>x.classList.remove('inspect'));
           if(!was)d.classList.add('inspect');
+          // A tap is still "trying the card" from the player's side even
+          // though by convention it only inspects — say up front that it
+          // can't be played rather than making them discover that only
+          // after a full drag to the play zone.
+          if(!was&&c.kind!=='perm'&&p.energy<costOf(c)){
+            toast('Not enough energy — costs <b>'+costOf(c)+'⚡</b>',1800);
+          }
         }
       };
       d.addEventListener('pointermove',mv);
