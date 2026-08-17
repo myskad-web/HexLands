@@ -2822,28 +2822,77 @@ header .sub{cursor:pointer}
 .ovl-body::-webkit-scrollbar{display:none}
 .ovl-body b{color:var(--gold-hot)}
 .ovl-body .em{color:#9cc8f0}
-/* ---- block prompt (BATTLE SYSTEM) ---- */
-.block-picks{
-  display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;
-  max-height:38vh;overflow-y:auto;scrollbar-width:none;
+/* ---- attacker stage (BATTLE SYSTEM) ----
+   The attack is not a dialogue box. The enemy card lands in the TOP HALF of
+   the screen and stays there, and your hand stays live underneath it, so you
+   defend by dragging a card up at the thing attacking you. The bottom half is
+   deliberately left clear: that is where your hand is, and it must remain
+   reachable and readable while the attacker sits above it. */
+#atkStage{
+  position:fixed;left:0;right:0;top:0;height:52vh;z-index:60;
+  pointer-events:none;
 }
-.block-picks::-webkit-scrollbar{display:none}
-.bpick{
-  flex:0 0 auto;min-width:74px;padding:7px 8px;border-radius:9px;
-  border:1px solid rgba(232,215,176,.22);background:rgba(20,16,12,.75);
-  font-size:12px;font-weight:700;color:rgba(232,215,176,.92);
-  text-align:left;line-height:1.35;cursor:pointer;
+#atkStage.hide{display:none}
+.as-veil{
+  position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(8,5,3,.88) 60%,rgba(8,5,3,0));
+  pointer-events:auto;
 }
-.bpick.on{border-color:var(--gold-hot);background:rgba(120,88,32,.5)}
-.bpick.dim{opacity:.35}
-.bpick .bp-n{display:block;font-size:11.5px;opacity:.85}
-.bpick .bp-s{display:block;color:var(--gold-hot)}
-.block-tally{
-  margin-top:9px;font-size:13px;font-weight:700;
-  color:rgba(232,215,176,.9);min-height:18px;
+.as-inner{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;padding:8px;
+  pointer-events:none;
 }
-.block-tally.ok{color:#7fd18a}
-.block-tally.no{color:#e08a7a}
+.as-label{
+  font-size:12.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:#e08a7a;text-shadow:0 1px 3px rgba(0,0,0,.9);
+}
+.as-card{position:relative;pointer-events:none;filter:drop-shadow(0 6px 18px rgba(0,0,0,.7))}
+.as-card .card{cursor:default;transform:scale(1.02)}
+/* pulses while it is waiting to be answered, so an unanswered attack never
+   looks like part of the static board */
+#atkStage.armed .as-card{animation:asPulse .5s ease-in-out infinite alternate}
+@keyframes asPulse{
+  from{transform:translateY(0) scale(1)}
+  to{transform:translateY(-5px) scale(1.045)}
+}
+.as-tally{
+  font-size:14px;font-weight:800;color:rgba(232,215,176,.92);
+  text-shadow:0 1px 3px rgba(0,0,0,.9);min-height:19px;
+}
+.as-tally.ok{color:#7fd18a}
+.as-tally.no{color:#e08a7a}
+.as-committed{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;pointer-events:auto}
+.as-chip{
+  padding:5px 9px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--gold-hot);background:rgba(120,88,32,.55);
+  font-size:12px;font-weight:800;color:#f0e0b8;
+}
+.as-chip .x{opacity:.7;margin-left:5px}
+.as-hint{
+  font-size:12px;font-weight:700;color:rgba(232,215,176,.65);
+  text-shadow:0 1px 3px rgba(0,0,0,.9);
+}
+.as-skip{
+  pointer-events:auto;margin-top:2px;padding:8px 16px;border-radius:10px;
+  border:1px solid rgba(232,215,176,.3);background:rgba(20,16,12,.9);
+  color:rgba(232,215,176,.9);font-size:13px;font-weight:800;
+}
+/* the whole stage lights up as a drop target while a card is being dragged */
+#atkStage.target .as-veil{
+  box-shadow:inset 0 0 0 2px rgba(232,215,176,.35);
+  background:linear-gradient(180deg,rgba(40,18,12,.9) 60%,rgba(8,5,3,0));
+}
+#atkStage.overtarget .as-veil{
+  box-shadow:inset 0 0 0 3px var(--gold-hot);
+  background:linear-gradient(180deg,rgba(70,30,14,.93) 60%,rgba(8,5,3,0));
+}
+/* A card being dragged UP AT the attacker has to ride above the stage, or it
+   disappears behind the veil at the exact moment the player is aiming it —
+   the ordinary .dragging z-index (30) sits below the stage's 60. */
+.hand.fanwrap .card.dragging.defending,
+.hand.fanwrap .card.dragging.defending:hover,
+.hand.fanwrap .card.dragging.defending:active{z-index:70!important}
 .tierrow{
   display:flex;align-items:center;gap:7px;margin-top:4px;
   font-size:12.8px;line-height:1.3;
@@ -3500,18 +3549,15 @@ header .sub{cursor:pointer}
     </div>
   </div>
 </div>
-<div class="ovl hide" id="blockOvl">
-  <div class="ovl-backdrop"></div>
-  <div class="ovl-box">
-    <div class="ovl-step">Under attack</div>
-    <div class="ovl-title" id="blockTitle">Incoming</div>
-    <div class="ovl-body" id="blockBody"></div>
-    <div id="blockPicks" class="block-picks"></div>
-    <div class="block-tally" id="blockTally"></div>
-    <div class="menu-btns">
-      <button id="blockGo" class="go">Block</button>
-      <button id="blockSkip">Take the hit</button>
-    </div>
+<div class="hide" id="atkStage">
+  <div class="as-veil"></div>
+  <div class="as-inner">
+    <div class="as-label" id="asLabel">Opponent attacks</div>
+    <div class="as-card" id="asCard"></div>
+    <div class="as-tally" id="asTally"></div>
+    <div class="as-committed" id="asCommitted"></div>
+    <div class="as-hint" id="asHint">Drag a card up to defend</div>
+    <button id="asSkip" class="as-skip">Take the hit</button>
   </div>
 </div>
 <div class="ovl hide" id="debug">
@@ -7295,7 +7341,16 @@ function finishBlock(take){
   if(take&&take.length&&blockKills(take,card)){
     const txt=commitBlock(defPi,take,card);
     log(txt+'.');
-    toast(txt,2600);
+    // A block the attacker cannot SEE is indistinguishable from their card
+    // doing nothing. When the opponent defends against you, their blockers
+    // are revealed the same way their plays are — otherwise your attack just
+    // silently fails and the game looks broken.
+    if(defPi!==ME){
+      showcase({...card},1-defPi,'blocked');
+      take.forEach(bc=>showcase({...bc},defPi,'block'));
+    }else{
+      toast(txt,2600);
+    }
     SFX.play('card');
   }else{
     // No block, or a block that fell short — binary, so a near miss stops
@@ -7316,58 +7371,92 @@ function finishBlock(take){
 }
 let blockThen=null;
 
-// ---- the live block prompt ----
-// Live-reactive by design: the prompt interrupts the moment an attacker
-// lands, and the player commits (and pays for) blockers right then. There is
-// no pre-declaration — see BATTLE-SYSTEM-DESIGN.md §7.3.
+// ---- the attacker stage ----
+// Live-reactive by design: the enemy card lands on screen the moment it is
+// played and STAYS there until answered. It is not a dialogue box — your hand
+// stays live underneath, and you defend by dragging cards up at it. See
+// BATTLE-SYSTEM-DESIGN.md §7.3.
 let blockSel=[];
 function showBlockPrompt(card,defPi,cands){
   blockSel=[];
-  const def=G.players[defPi];
-  $('blockTitle').textContent=card.name+'  '+(card.atk||0)+'\u2694 / '+(card.curHp||0)+'\u2665';
-  $('blockBody').innerHTML=
-    'Their <b>'+card.name+'</b> is attacking for <b>'+(card.atk||0)+'</b> damage.<br>'+
-    'Commit cards whose combined attack reaches <b>'+(card.curHp||0)+'</b> to destroy it. '+
-    'Anything less stops nothing.';
-  renderBlockPicks(card,defPi,cands);
-  $('blockOvl').classList.remove('hide');
+  const st=$('atkStage');
+  $('asLabel').textContent='Opponent attacks \u2014 '+(card.atk||0)+' damage';
+  $('asCard').innerHTML='<div class="card '+card.kind+
+    (card.kind==='unit'&&card.arch?' a-'+card.arch:'')+'">'+
+    cardFaceHTML(card,1-defPi)+'</div>';
+  st.classList.remove('hide');
+  st.classList.add('armed');
+  renderStage();
+  // The hand lives in a slide-up panel that is normally CLOSED during the
+  // opponent's turn — an attacker appearing over an unreachable hand is the
+  // whole feature broken. Open it so there is always something to drag.
+  openHandPanel();
+  renderHand();          // repaint so the hand knows it can be dragged now
 }
-function renderBlockPicks(card,defPi,cands){
-  const wrap=$('blockPicks');
-  wrap.innerHTML='';
-  const bud=defBudget(defPi);
-  const spent=blockSel.reduce((s,c)=>s+costOf(c),0);
-  cands.forEach(c=>{
-    const d=document.createElement('button');
-    const on=blockSel.includes(c);
-    const afford=on||spent+costOf(c)<=bud;
-    d.className='bpick'+(on?' on':'')+(afford?'':' dim');
-    d.innerHTML='<span class="bp-s">'+blockPower(c)+'\u2694</span>'+
-      '<span class="bp-n">'+c.name+'</span>'+
-      '<span class="bp-n">'+costOf(c)+'\u26a1'+
-      (c.kind==='unit'?' \u00b7 '+c.curHp+'\u2665':'')+'</span>';
-    d.onclick=()=>{
-      if(on)blockSel=blockSel.filter(x=>x!==c);
-      else if(afford)blockSel.push(c);
-      else return;
-      renderBlockPicks(card,defPi,cands);
-    };
-    wrap.appendChild(d);
-  });
+// Everything that changes as cards are committed lives here, so the drag
+// handler and the chip taps share one repaint.
+function renderStage(){
+  const pend=G.pendingAtk;
+  if(!pend)return;
+  const card=pend.card, defPi=pend.defPi;
   const power=blockSel.reduce((s,c)=>s+blockPower(c),0);
   const need=card.curHp||0;
-  const t=$('blockTally');
-  const left=bud-blockSel.reduce((s,c)=>s+costOf(c),0);
-  t.className='block-tally '+(power>=need?'ok':power>0?'no':'');
+  const spent=blockSel.reduce((s,c)=>s+costOf(c),0);
+  const left=defBudget(defPi)-spent;
+  const t=$('asTally');
+  t.className='as-tally '+(power>=need?'ok':power>0?'no':'');
   t.textContent=power+' / '+need+' attack'+
-    (power>=need?'  — destroys it':power>0?'  — not enough, the hit still lands':'')+
+    (power>0&&power<need?'  \u2014 not enough yet':'')+
     '   \u00b7   '+left+'\u26a1 left';
-  $('blockGo').disabled=power<need;
-  $('blockGo').style.opacity=power<need?0.45:1;
+  // committed cards are shown as chips you can tap to pull back, so a partial
+  // commit is never a trap — the binary rule means a block short of lethal is
+  // wasted, and the player must be able to undo their way out of one
+  const wrap=$('asCommitted');
+  wrap.innerHTML='';
+  blockSel.forEach(c=>{
+    const b=document.createElement('button');
+    b.className='as-chip';
+    b.innerHTML=c.name+' '+blockPower(c)+'\u2694<span class="x">\u00d7</span>';
+    b.onclick=()=>{blockSel=blockSel.filter(x=>x!==c);renderStage();renderHand();};
+    wrap.appendChild(b);
+  });
+  $('asHint').textContent=blockSel.length
+    ? (power>=need?'Release \u2014 it dies':'Drag another card up')
+    : 'Drag a card up to defend';
+}
+// Called by the hand's drag handler when a card is released over the stage.
+// Returns false if it could not be committed, so the caller can toast.
+function stageCommit(c){
+  const pend=G.pendingAtk;
+  if(!pend)return false;
+  if(blockSel.includes(c))return false;
+  const spent=blockSel.reduce((s,x)=>s+costOf(x),0);
+  if(spent+costOf(c)>defBudget(pend.defPi))return 'energy';
+  if(blockPower(c)<=0)return 'nodmg';
+  blockSel.push(c);
+  const power=blockSel.reduce((s,x)=>s+blockPower(x),0);
+  renderStage();
+  // Reaching lethal resolves immediately — there is no confirm step, because
+  // the tally already told you it kills and a second tap to say so is just
+  // ceremony in the middle of a fight.
+  if(power>=(pend.card.curHp||0)){
+    const take=blockSel.slice();
+    closeBlockPrompt();
+    finishBlock(take);
+    return 'killed';
+  }
+  return true;
 }
 function closeBlockPrompt(){
-  $('blockOvl').classList.add('hide');
+  const st=$('atkStage');
+  st.classList.add('hide');
+  st.classList.remove('armed','target','overtarget');
   blockSel=[];
+  // The panel was force-opened for this attack (see showBlockPrompt). Put it
+  // back once the attack is answered so it does not sit over the board for
+  // the rest of the opponent's turn — but leave it alone on your own turn,
+  // where the player controls it themselves.
+  if(G.turn!==ME&&G.handOpen)closeHandPanel();
 }
 
 // Spend the committed cards and resolve the block. Returns a log line.
@@ -9338,6 +9427,8 @@ function pumpShowcase(){
     mode==='draw'?'You draw'
     :mode==='steal'?'You steal'
     :mode==='stolen'?'Opponent steals your card'
+    :mode==='block'?(who===ME?'You block with':'Opponent blocks with')
+    :mode==='blocked'?'Blocked \u2014 destroyed'
     :(who===ME?'You play':'Opponent plays');
   $('scCard').innerHTML='<div class="card '+card.kind+(card.taunt?' tankcard':'')+
     (card.kind==='unit'&&card.arch?' a-'+card.arch:'')+
@@ -9403,7 +9494,11 @@ function pumpShowcase(){
       }
       pumpShowcase();
     },(mode==='draw'||mode==='steal'||mode==='stolen')?500:mode==='attack'?460:290);
-  },mode==='draw'?800:mode==='steal'?1100:mode==='stolen'?1400:(who===ME?950:1500));
+    // A blocked attack and the cards that stopped it are shown back to back,
+    // so they are held BRIEFLY — long enough to read which card died and what
+    // killed it, short enough that a three-attack turn is not a slideshow.
+  },mode==='draw'?800:mode==='steal'?1100:mode==='stolen'?1400
+    :mode==='blocked'?800:mode==='block'?700:(who===ME?950:1500));
 }
 let toastTimer=null;
 let inCountdown=true;   // true only during the pre-game board study period
@@ -9832,6 +9927,64 @@ function renderHand(){
     // fanned hand it's easy to tap a card just to read it — playing must
     // be a deliberate gesture.
     d.onpointerdown=(ev)=>{
+      // BATTLE SYSTEM: while an attack is waiting on you, the hand is live
+      // even though it is NOT your turn — that is the whole point of live
+      // blocking. This branch runs its own drag, targeting the attacker
+      // stage rather than the play zone, and returns before the ordinary
+      // turn guard below (which would reject it, since G.turn is the
+      // attacker's seat).
+      if(G.pendingAtk&&G.pendingAtk.defPi===ME&&G.phase!=='over'){
+        ev.preventDefault();
+        if(blockSel.includes(c))return;
+        const sX=ev.clientX,sY=ev.clientY;
+        let dragging=false,over=false;
+        const st=$('atkStage');
+        try{d.setPointerCapture(ev.pointerId);}catch(e){}
+        const dmv=(e)=>{
+          const dx=e.clientX-sX,dy=e.clientY-sY;
+          if(!dragging&&Math.hypot(dx,dy)>12){
+            dragging=true;
+            d.classList.remove('inspect');
+            // `defending` lifts it above the stage veil — see the CSS note
+            d.classList.add('dragging','defending');
+            st.classList.add('target');
+          }
+          if(!dragging)return;
+          d.style.setProperty('transform',
+            `translate(${dx}px,${dy}px) scale(1.08) rotate(0deg)`,'important');
+          const r=st.getBoundingClientRect();
+          over=e.clientY<r.bottom;      // anywhere in the top half counts
+          d.classList.toggle('armed',over);
+          st.classList.toggle('overtarget',over);
+        };
+        const dup=()=>{
+          d.removeEventListener('pointermove',dmv);
+          d.removeEventListener('pointerup',dup);
+          d.removeEventListener('pointercancel',dup);
+          st.classList.remove('target','overtarget');
+          d.classList.remove('dragging','armed','defending');
+          if(dragging&&over){
+            const r=stageCommit(c);
+            if(r==='energy')toast('Not enough energy to commit that');
+            else if(r==='nodmg')toast('That card deals no damage — it cannot kill an attacker');
+            // 'killed' already closed the stage and resolved the block
+            if(r!=='killed')renderHand();
+            return;
+          }
+          if(!dragging){
+            // a plain tap still inspects, exactly as on your own turn
+            const was=d.classList.contains('inspect');
+            h.querySelectorAll('.card.inspect').forEach(x=>x.classList.remove('inspect'));
+            if(!was)d.classList.add('inspect');
+            return;
+          }
+          renderHand();
+        };
+        d.addEventListener('pointermove',dmv);
+        d.addEventListener('pointerup',dup);
+        d.addEventListener('pointercancel',dup);
+        return;
+      }
       if(G.turn!==ME||G.phase==='over')return;
       // cards are locked until you've rolled: production comes first, so
       // playing before the roll would let you act on information you
@@ -10644,7 +10797,12 @@ function closeHandPanel(){
   hud();
 }
 $('handstack').onclick=openHandPanel;
-$('handpanelBackdrop').onclick=closeHandPanel;
+$('handpanelBackdrop').onclick=()=>{
+  // While an attack is waiting on you the hand must stay reachable — closing
+  // it would leave the attacker on screen with no way to answer it.
+  if(G.pendingAtk&&G.pendingAtk.defPi===ME)return;
+  closeHandPanel();
+};
 $('handpanelClose').onclick=closeHandPanel;
 $('end').onclick=()=>{
   if(G.turn!==ME||G.phase==='over'||!G.rolled)return;
@@ -11644,12 +11802,7 @@ $('spoilsClose').onclick=()=>{
   renderPurse();renderSpoilsBtn();
 };
 $('omenHigh').onclick=()=>setOmen('high');
-$('blockGo').onclick=()=>{
-  const take=blockSel.slice();
-  closeBlockPrompt();
-  finishBlock(take);
-};
-$('blockSkip').onclick=()=>{
+$('asSkip').onclick=()=>{
   closeBlockPrompt();
   finishBlock(null);
 };
