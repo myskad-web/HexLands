@@ -1616,14 +1616,16 @@ body.land .gemstrip::-webkit-scrollbar{display:none}
    every rail width and every inset, instead of true-at-the-sizes-tested. */
 body.land{ --gemGap:2px; }   /* 4 -> 2px, asked for the segments to sit closer together */
 body.land .gseg{
-  /* One column now, not six-across — width isn't fighting five neighbours
-     for horizontal space any more, so this can sit a bit larger than the
-     single-row version while staying well clear of a typical rail width.
-     max-height on the STRIP (with scroll) is what stops a tall column from
-     ever reaching the buttons, not a smaller tile — see body.land
-     .gemstrip. */
-  width:clamp(26px,7.5vw,36px);aspect-ratio:1 / 1.15;height:auto;
-  font-size:clamp(10.5px,2.6vw,14px);
+  /* Back to a JS-computed size (--gemW), not a fixed clamp(). The clamp
+     version picked a size that LOOKED reasonable but had no relationship
+     to how much vertical room six of them stacked in one column actually
+     had — on the real device only 3 fit before the scroll boundary, with
+     no visible scrollbar to hint the rest existed. --gemW is now derived
+     directly from --gemMaxH divided across 6 rows (see layout()), so "all
+     six fit without scrolling" is true by construction instead of a size
+     that has to happen to be small enough. */
+  width:var(--gemW,30px);aspect-ratio:1 / 1.15;height:auto;
+  font-size:calc(var(--gemW,30px) * 0.34);
   flex:0 0 auto;
 }
 /* Font/padding were fixed regardless of viewport — width already scaled
@@ -3776,24 +3778,68 @@ const ART_IMAGES={};
     img.src=ART_PATHS[terrain];
   });
 })();
-// Village/city art. Same probe-and-fallback shape as tile/gem/hero art: try
-// art/buildings/village.png and city.png, keep the current hand-drawn canvas
-// version if either is missing. The one wrinkle buildings have that tiles
-// don't: a village/city is drawn in the OWNER'S colour (see the `col`
-// parameter threaded through village()/city() below), and a static PNG
-// can't recolour itself per-player the way a canvas gradient can. Handled in
-// the drawing functions themselves via a source-atop tint pass rather than
-// here — this block only loads the images.
-const BUILDING_ART={};
+// Village/city art. Building art was for one image and one owner-colour tint.
+// Asked for separately-uploadable art per player colour instead — a Bastion
+// on your side and a Bastion on theirs can now be genuinely different
+// paintings, not the same painting washed a different colour. THREE tiers,
+// checked in order, same probe-and-fallback shape throughout:
+//   1. art/buildings/village-blue.png / village-red.png (per-colour, no tint)
+//   2. art/buildings/village.png (single neutral image, tinted at runtime —
+//      the original approach, kept working for anyone who already has this)
+//   3. hand-drawn procedural canvas (always available, zero files needed)
+const BUILDING_ART={village:{},city:{}};
 (function loadBuildingArt(){
-  const paths={village:'art/buildings/village.png',city:'art/buildings/city.png'};
-  Object.keys(paths).forEach(kind=>{
+  const paths={
+    'village.blue':'art/buildings/village-blue.png',
+    'village.red':'art/buildings/village-red.png',
+    'village.neutral':'art/buildings/village.png',
+    'city.blue':'art/buildings/city-blue.png',
+    'city.red':'art/buildings/city-red.png',
+    'city.neutral':'art/buildings/city.png',
+  };
+  Object.keys(paths).forEach(key=>{
+    const[kind,variant]=key.split('.');
     const img=new Image();
-    img.onload=()=>{ BUILDING_ART[kind]=img; };
-    img.onerror=()=>{ /* no custom building art yet — the procedural piece stays in effect */ };
-    img.src=paths[kind];
+    img.onload=()=>{ BUILDING_ART[kind][variant]=img; };
+    img.onerror=()=>{ /* that variant not supplied — later tiers still apply */ };
+    img.src=paths[key];
   });
 })();
+// Road/Ley Path art. UNLIKE buildings, a road can't just probe one image and
+// rotate it to face any direction: these are isometric scenes with a fixed
+// camera, baked-in lighting and perspective, so rotating the sprite rotates
+// its shadows away from how the rest of the board is lit. A flat-top hex
+// grid only has 3 distinct CONNECTION AXES though (opposite directions run
+// along the same line), so 3 fixed orientations cover every possible road on
+// the board — see classifyRoadAxis() for exactly which axis is which.
+// Same probe-and-fallback shape as BUILDING_ART: missing files mean the
+// hand-drawn procedural road (still fully functional, still rotates freely)
+// stays in effect. Safe with 0, 1, 2, or 3 files present.
+const ROAD_ART={};
+(function loadRoadArt(){
+  const paths={
+    ns:'art/roads/bridge-ns.png',        // straight up/down connection
+    slash:'art/roads/bridge-slash.png',      // "/" — bottom-left to top-right
+    backslash:'art/roads/bridge-backslash.png',  // "\" — top-left to bottom-right
+  };
+  Object.keys(paths).forEach(axis=>{
+    const img=new Image();
+    img.onload=()=>{ ROAD_ART[axis]=img; };
+    img.onerror=()=>{ /* no custom bridge art for this axis yet */ };
+    img.src=paths[axis];
+  });
+})();
+// Which of the 3 axes does a road between these two screen points sit on?
+// Derived from hexCentre()'s own formula (S*1.5*q, S*sqrt(3)*TILT*(r+q/2)):
+// a flat-top grid's 6 neighbour directions collapse to exactly 3 lines —
+// straight vertical (dx≈0), and two diagonals whose slope is fixed by TILT
+// regardless of hex size, so this works at any zoom level without needing S.
+function classifyRoadAxis(ax,ay,bx,by){
+  const dx=bx-ax, dy=by-ay;
+  if(Math.abs(dx)<0.001)return'ns';
+  // slope of the two diagonals is always ±(sqrt(3)*TILT)/1.5, by construction
+  return(dy/dx)<0?'slash':'backslash';
+}
 // Menu backdrops. Same probe-and-fallback shape again, published as a CSS
 // custom property rather than an inline style — the two backdrops already
 // read var(--menu-title-bg,none)/var(--menu-diff-bg,none) as the first layer
@@ -5018,18 +5064,23 @@ function layout(){
     const gemTop=38+inset.t;   // must match body.land .gempanel's `top`
     const gemMaxH=Math.max(40,Math.round(h-gemTop-btnStack-22-10));
     document.body.style.setProperty('--gemMaxH',gemMaxH+'px');
-    // --gemW is a TEXT-SIZE target now, not a box dimension — the gem tiles
-    // themselves are laid out with CSS grid (1fr columns) and sized with
-    // aspect-ratio (see body.land .gseg), which fit the real container
-    // width by construction and can't drift out of sync with a separate JS
-    // number the way an explicit px width could. This still estimates that
-    // width reasonably closely (same railContent/gap arithmetic grid ends
-    // up resolving to), which is all font-size needs — a font a px or two
-    // off from the tile's true rendered size just looks slightly off, it
-    // doesn't clip or overflow anything, so an approximation is fine here
-    // in a way it wasn't for the box edge itself.
-    const gemGap=4, gemRows=3;
-    const gemByW=(railContent-gemGap*2)/3;
+    // --gemW now sizes the actual tile again (not just its font), because
+    // the fixed clamp() this briefly used could pick a size that simply
+    // doesn't fit 6 of them stacked in one column before the panel runs out
+    // of height — which is exactly what happened: only 3 were visible, the
+    // rest sitting past the scroll boundary with no visible scrollbar to
+    // hint they were there at all. Deriving the tile from gemMaxH directly,
+    // the same way the old 3-row grid did, makes "6 tiles fit in the space
+    // available" true by construction instead of a size that has to happen
+    // to be small enough.
+    //
+    // 3 rows -> 6: this is ONE column now, six single-file rows, not two
+    // columns of three — so the height budget is divided by 6 rows' worth
+    // of gaps and heights, not 3. Width is capped by the column's own
+    // content width (railContent) rather than a third of it, since there's
+    // only one tile per row now instead of three.
+    const gemGap=4, gemRows=6;
+    const gemByW=railContent;
     const gemByH=(gemMaxH-gemGap*(gemRows-1))/(gemRows*1.15);
     document.body.style.setProperty('--gemW',
       (Math.floor(Math.min(gemByW,gemByH)*10)/10)+'px');
@@ -5078,7 +5129,23 @@ function layout(){
     // below HP rather than its whole height plus margins.
     const armDip=Math.round(heroSat*0.85*1.14*0.30);
     const hexrowH=heroHP*1.14+heroSat*1.14*0.78+armDip;
-    const plateMax=Math.floor((h-8-inset.t-inset.b)/2);
+    // THE ARMOUR-CLIPPING BUG: plateMax used to be flatly half the viewport
+    // height, with nothing checking that half the viewport is actually BIG
+    // ENOUGH for the hero cluster it has to contain. Armour is deliberately
+    // positioned to hang below hexrow's own box (see the .armrow comment —
+    // "costs --armDip instead of ~49px"), relying entirely on the plate's
+    // own overflow:hidden boundary having slack to spare. On a short enough
+    // screen, half the viewport can come out smaller than hexrowH itself,
+    // and armour's dip — being the outermost, last-in-flow element — is the
+    // first casualty: "not fully displayed" is exactly what a clipped dip
+    // looks like. Floor removed: plateMax can never be smaller than the
+    // cluster it has to hold, on any screen, regardless of what half the
+    // viewport happens to be. This costs nothing on a normal screen (the
+    // max already exceeded hexrowH there) and only matters on the small one
+    // where it was actually breaking.
+    const plateMax=Math.max(
+      Math.floor((h-8-inset.t-inset.b)/2),
+      Math.ceil(hexrowH+8));
     // plate padding (2+2) + the flex gap between hexrow and the chip list
     const extraMax=Math.max(0,Math.floor(plateMax-4-hexrowH-4));
     document.body.style.setProperty('--armDip',armDip+'px');
@@ -5718,19 +5785,26 @@ const ART=(function(){
   // the piece that makes "custom building art" actually work for a 2-player
   // board instead of only working for whichever colour the art happened to
   // be painted in.
-  function paintBuildingArt(g,img,x,y,k,col,wk,hk){
+  function paintBuildingArt(g,img,x,y,k,col,wk,hk,tint){
     const dw=k*wk,dh=k*hk;
     g.save();
     g.drawImage(img,x-dw/2,y-dh,dw,dh);
-    g.globalCompositeOperation='source-atop';
-    g.globalAlpha=.4;
-    g.fillStyle=col;
-    g.fillRect(x-dw/2,y-dh,dw,dh);
+    // Only tint when drawing the single NEUTRAL fallback image — a
+    // per-colour image (village-blue.png etc.) is already the right colour
+    // by construction, and washing it again would just muddy it.
+    if(tint){
+      g.globalCompositeOperation='source-atop';
+      g.globalAlpha=.4;
+      g.fillStyle=col;
+      g.fillRect(x-dw/2,y-dh,dw,dh);
+    }
     g.restore();
   }
-  function village(g,x,y,k,col){
+  function village(g,x,y,k,col,colorKey){
     seat(g,x,y,k*1.1);
-    if(BUILDING_ART.village){paintBuildingArt(g,BUILDING_ART.village,x,y,k,col,0.88,0.88);return;}
+    const perColour=BUILDING_ART.village[colorKey];
+    if(perColour){paintBuildingArt(g,perColour,x,y,k,col,0.88,0.88,false);return;}
+    if(BUILDING_ART.village.neutral){paintBuildingArt(g,BUILDING_ART.village.neutral,x,y,k,col,0.88,0.88,true);return;}
     for(const d of[-1,1])cyl(g,x+d*k*.44,y-k*.02,k*.09,k*.30,'#4a3418',false);
     outline(g,gg=>{gg.beginPath();gg.rect(x-k*.31,y-k*.34,k*.62,k*.34);},k);
     const wg=g.createLinearGradient(x-k*.31,0,x+k*.31,0);
@@ -5748,9 +5822,11 @@ const ART=(function(){
     g.fillRect(x-k*.10,y-k*.20,k*.20,k*.20);
   }
   // city = a stronghold: crenellated stone keep, corner turret, two banners
-  function city(g,x,y,k,col){
+  function city(g,x,y,k,col,colorKey){
     seat(g,x,y,k*1.2);
-    if(BUILDING_ART.city){paintBuildingArt(g,BUILDING_ART.city,x,y,k,col,1.05,1.05);return;}
+    const perColour=BUILDING_ART.city[colorKey];
+    if(perColour){paintBuildingArt(g,perColour,x,y,k,col,1.05,1.05,false);return;}
+    if(BUILDING_ART.city.neutral){paintBuildingArt(g,BUILDING_ART.city.neutral,x,y,k,col,1.05,1.05,true);return;}
     outline(g,gg=>{gg.beginPath();gg.rect(x-k*.38,y-k*.48,k*.76,k*.48);},k);
     const bg=g.createLinearGradient(x-k*.38,0,x+k*.38,0);
     bg.addColorStop(0,'#9aa3ad');bg.addColorStop(.55,'#727b86');bg.addColorStop(1,'#3d444c');
@@ -5777,6 +5853,29 @@ const ART=(function(){
   // road = a rampart: earth berm, timber cross-ties, owner colour on the crown
   function road(g,ax,ay,bx,by,k,col){
     const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1;
+    // A matching pre-rendered bridge draws UNROTATED at its fixed painted
+    // angle — rotating a baked-lighting isometric sprite would spin its
+    // shadows away from the rest of the board, which is exactly why this
+    // needs 3 assets instead of the 1 the procedural version gets away
+    // with. classifyRoadAxis picks the axis; if that axis's art hasn't
+    // been supplied yet, this falls through to the procedural piece below
+    // exactly like BUILDING_ART's fallback does.
+    const axis=classifyRoadAxis(ax,ay,bx,by);
+    const art=ROAD_ART[axis];
+    if(art){
+      g.save();
+      g.translate((ax+bx)/2,(ay+by)/2);
+      const dw=len*1.02, dh=k*0.9;
+      g.drawImage(art,-dw/2,-dh/2,dw,dh);
+      // same owner-colour tint pass as buildings, so a bridge is still
+      // identifiable as "yours" vs "theirs" at a glance
+      g.globalCompositeOperation='source-atop';
+      g.globalAlpha=.35;
+      g.fillStyle=col;
+      g.fillRect(-dw/2,-dh/2,dw,dh);
+      g.restore();
+      return;
+    }
     g.save();
     g.translate((ax+bx)/2,(ay+by)/2);
     g.rotate(Math.atan2(dy,dx));
@@ -5921,8 +6020,10 @@ function drawVillage(x,y,owner,city){
   // Colour is relative to the viewer, not to the seat number: blue is always
   // "mine", red is always "theirs". Keyed to a literal 0, the guest saw their
   // own settlements in the opponent's colour and vice versa.
-  const col=owner===ME?'#4d86c8':'#c04a34';
-  if(city)ART.city(cx,x,y,k,col);else ART.village(cx,x,y,k,col);
+  const mine=owner===ME;
+  const col=mine?'#4d86c8':'#c04a34';
+  const colorKey=mine?'blue':'red';
+  if(city)ART.city(cx,x,y,k,col,colorKey);else ART.village(cx,x,y,k,col,colorKey);
 }
 // draws one decorative border-ring hex (mountains/forest framing the map,
 // never interactive, no numbers)
