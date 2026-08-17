@@ -3787,22 +3787,39 @@ const ART_IMAGES={};
 //   2. art/buildings/village.png (single neutral image, tinted at runtime —
 //      the original approach, kept working for anyone who already has this)
 //   3. hand-drawn procedural canvas (always available, zero files needed)
+// Tries a base path against several extensions in turn (png first, since
+// that's what every existing art path already assumes, then jpg/jpeg for
+// anything exported straight from Gemini/ChatGPT without a manual PNG
+// conversion step). Stops at the first one that actually loads; calls back
+// with nothing if none of them exist, matching every other art probe's
+// "missing file is fine" behaviour.
+function loadArtAnyExt(basePathNoExt,onload){
+  const exts=['png','jpg','jpeg'];
+  let i=0;
+  const tryNext=()=>{
+    if(i>=exts.length)return;   // none of them exist — silently give up
+    const img=new Image();
+    img.onload=()=>onload(img);
+    img.onerror=()=>{i++;tryNext();};
+    img.src=basePathNoExt+'.'+exts[i];
+  };
+  tryNext();
+}
 const BUILDING_ART={village:{},city:{}};
 (function loadBuildingArt(){
+  // no extension here any more — loadArtAnyExt tries .png, .jpg, .jpeg for
+  // each of these in turn
   const paths={
-    'village.blue':'art/buildings/village-blue.png',
-    'village.red':'art/buildings/village-red.png',
-    'village.neutral':'art/buildings/village.png',
-    'city.blue':'art/buildings/city-blue.png',
-    'city.red':'art/buildings/city-red.png',
-    'city.neutral':'art/buildings/city.png',
+    'village.blue':'art/buildings/village-blue',
+    'village.red':'art/buildings/village-red',
+    'village.neutral':'art/buildings/village',
+    'city.blue':'art/buildings/city-blue',
+    'city.red':'art/buildings/city-red',
+    'city.neutral':'art/buildings/city',
   };
   Object.keys(paths).forEach(key=>{
     const[kind,variant]=key.split('.');
-    const img=new Image();
-    img.onload=()=>{ BUILDING_ART[kind][variant]=img; };
-    img.onerror=()=>{ /* that variant not supplied — later tiers still apply */ };
-    img.src=paths[key];
+    loadArtAnyExt(paths[key],img=>{ BUILDING_ART[kind][variant]=img; });
   });
 })();
 // Road/Ley Path art. UNLIKE buildings, a road can't just probe one image and
@@ -3818,15 +3835,12 @@ const BUILDING_ART={village:{},city:{}};
 const ROAD_ART={};
 (function loadRoadArt(){
   const paths={
-    ns:'art/roads/bridge-ns.png',        // straight up/down connection
-    slash:'art/roads/bridge-slash.png',      // "/" — bottom-left to top-right
-    backslash:'art/roads/bridge-backslash.png',  // "\" — top-left to bottom-right
+    ns:'art/roads/bridge-ns',        // straight up/down connection
+    slash:'art/roads/bridge-slash',      // "/" — bottom-left to top-right
+    backslash:'art/roads/bridge-backslash',  // "\" — top-left to bottom-right
   };
   Object.keys(paths).forEach(axis=>{
-    const img=new Image();
-    img.onload=()=>{ ROAD_ART[axis]=img; };
-    img.onerror=()=>{ /* no custom bridge art for this axis yet */ };
-    img.src=paths[axis];
+    loadArtAnyExt(paths[axis],img=>{ ROAD_ART[axis]=img; });
   });
 })();
 // Which of the 3 axes does a road between these two screen points sit on?
