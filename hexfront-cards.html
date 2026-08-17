@@ -657,6 +657,11 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
   border:1.5px solid #ffd76a;border-radius:11px;padding:5px 9px;
 }
 .hp-buy:disabled{opacity:.4;filter:grayscale(.6);cursor:default}
+.hp-buy.hide{display:none}
+/* replaces the Mystery-buy button while a block is live: buying is never
+   legal on the opponent's turn, so offering it there was dead weight — this
+   takes its exact slot rather than adding a new one */
+.hp-hit{background:linear-gradient(#e8a08a,#c05a42 55%,#8a3020);border-color:#e8a08a;color:#2a0c0c}
 .handpanel-close{
   width:24px;height:24px;padding:0;border-radius:50%;
   display:flex;align-items:center;justify-content:center;font-size:13.9px;
@@ -749,6 +754,9 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
 }
 @keyframes cardglow{0%,100%{opacity:.5}50%{opacity:1}}
 .card.spent{filter:grayscale(.85) brightness(.42);opacity:.72;cursor:default}
+/* already dragged onto the attacker — pulled slightly down and dimmed,
+   distinct from 'spent' so it reads as "in play" rather than "unusable" */
+.card.committed{filter:brightness(.6);opacity:.5;transform:translateY(10px)!important}
 /* an unaffordable card's price turns cold so the reason is legible at a glance */
 .card.spent .cgem{
   background:linear-gradient(#8e8578,#5a534a 45%,#2f2b26);
@@ -2838,7 +2846,6 @@ body.land #atkStage{height:66vh}
 body.land .as-inner{gap:3px;padding:4px}
 body.land .as-label{font-size:11px}
 body.land .as-tally{font-size:12.5px}
-body.land .as-hint{font-size:11px}
 body.land .as-skip{padding:6px 14px;font-size:12px}
 #atkStage.hide{display:none}
 .as-veil{
@@ -2884,6 +2891,7 @@ body.land .as-skip{padding:6px 14px;font-size:12px}
   font-size:14px;font-weight:800;color:rgba(232,215,176,.92);
   text-shadow:0 1px 3px rgba(0,0,0,.9);min-height:19px;
 }
+.as-tally.hide{display:none}
 .as-tally.ok{color:#7fd18a}
 .as-tally.no{color:#e08a7a}
 .as-committed{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;pointer-events:auto}
@@ -2893,10 +2901,6 @@ body.land .as-skip{padding:6px 14px;font-size:12px}
   font-size:12px;font-weight:800;color:#f0e0b8;
 }
 .as-chip .x{opacity:.7;margin-left:5px}
-.as-hint{
-  font-size:12px;font-weight:700;color:rgba(232,215,176,.65);
-  text-shadow:0 1px 3px rgba(0,0,0,.9);
-}
 .as-skip{
   pointer-events:auto;margin-top:2px;padding:8px 16px;border-radius:10px;
   border:1px solid rgba(232,215,176,.3);background:rgba(20,16,12,.9);
@@ -3429,9 +3433,10 @@ body.land .as-skip{padding:6px 14px;font-size:12px}
     <div class="playzone hide" id="playzone">Drag here to play</div>
     <div class="handpanel-sheet">
       <div class="hand fanwrap" id="hand"><div class="handempty">Your hand is empty.</div></div>
-      <div class="handpanel-head">
+      <div class="handpanel-head" id="handpanelHead">
         <button id="buyBtnPanel" class="hp-buy" disabled>Mystery 2⚡</button>
         <button class="handpanel-close" id="handpanelClose">✕</button>
+        <button id="hpTakeHit" class="hp-buy hp-hit hide">Take the hit</button>
       </div>
     </div>
   </div>
@@ -3578,9 +3583,8 @@ body.land .as-skip{padding:6px 14px;font-size:12px}
   <div class="as-inner" id="asInner">
     <div class="as-label" id="asLabel">Opponent attacks</div>
     <div class="as-card" id="asCard"></div>
-    <div class="as-tally" id="asTally"></div>
+    <div class="as-tally hide" id="asTally"></div>
     <div class="as-committed" id="asCommitted"></div>
-    <div class="as-hint" id="asHint">Drag a card up to defend</div>
     <button id="asSkip" class="as-skip">Take the hit</button>
   </div>
 </div>
@@ -7410,7 +7414,7 @@ let blockSel=[];
 function showBlockPrompt(card,defPi,cands){
   blockSel=[];
   const st=$('atkStage');
-  $('asLabel').textContent='Opponent attacks \u2014 '+(card.atk||0)+' damage';
+  $('asLabel').textContent='Opponent attacks';
   $('asCard').innerHTML='<div class="card '+card.kind+
     (card.kind==='unit'&&card.arch?' a-'+card.arch:'')+'">'+
     cardFaceHTML(card,1-defPi)+'</div>';
@@ -7422,6 +7426,12 @@ function showBlockPrompt(card,defPi,cands){
   // opponent's turn — an attacker appearing over an unreachable hand is the
   // whole feature broken. Open it so there is always something to drag.
   openHandPanel();
+  // Buying a Mystery card is never legal on the opponent's turn, so the
+  // Mystery button just sat there doing nothing while you were trying to
+  // read your hand. It takes the exact same slot as Take the hit, rather
+  // than adding a second button to an already full row.
+  $('buyBtnPanel').classList.add('hide');
+  $('hpTakeHit').classList.remove('hide');
   renderHand();          // repaint so the hand knows it can be dragged now
 }
 // Cards are a fixed pixel size, so CSS alone cannot shrink one to fit — it
@@ -7460,13 +7470,19 @@ function renderStage(){
   const card=pend.card, defPi=pend.defPi;
   const power=blockSel.reduce((s,c)=>s+blockPower(c),0);
   const need=card.curHp||0;
-  const spent=blockSel.reduce((s,c)=>s+costOf(c),0);
-  const left=defBudget(defPi)-spent;
+  // Decluttered: the energy figure already lives in the HUD hex (defBudget
+  // is painted there while blocking — see hud()), so repeating "X energy
+  // left" here was the same number twice. And before any card is committed,
+  // "0 / N attack" has no information in it worth a line of screen — the
+  // progress readout only earns its place once there IS progress.
   const t=$('asTally');
-  t.className='as-tally '+(power>=need?'ok':power>0?'no':'');
-  t.textContent=power+' / '+need+' attack'+
-    (power>0&&power<need?'  \u2014 not enough yet':'')+
-    '   \u00b7   '+left+'\u26a1 left';
+  if(!blockSel.length){
+    t.classList.add('hide');
+  }else{
+    t.classList.remove('hide');
+    t.className='as-tally '+(power>=need?'ok':'no');
+    t.textContent=power+' / '+need;
+  }
   // committed cards are shown as chips you can tap to pull back, so a partial
   // commit is never a trap — the binary rule means a block short of lethal is
   // wasted, and the player must be able to undo their way out of one
@@ -7479,9 +7495,6 @@ function renderStage(){
     b.onclick=()=>{blockSel=blockSel.filter(x=>x!==c);renderStage();renderHand();};
     wrap.appendChild(b);
   });
-  $('asHint').textContent=blockSel.length
-    ? (power>=need?'Release \u2014 it dies':'Drag another card up')
-    : 'Drag a card up to defend';
   // committing cards adds chips, which eats vertical room — refit or the
   // card starts overflowing again after the first block is committed
   fitStageCard();
@@ -7514,6 +7527,8 @@ function closeBlockPrompt(){
   st.classList.add('hide');
   st.classList.remove('armed','target','overtarget');
   blockSel=[];
+  $('buyBtnPanel').classList.remove('hide');
+  $('hpTakeHit').classList.add('hide');
   // The panel was force-opened for this attack (see showBlockPrompt). Put it
   // back once the attack is answered so it does not sit over the board for
   // the rest of the opponent's turn — but leave it alone on your own turn,
@@ -9956,8 +9971,17 @@ function renderHand(){
     const d=document.createElement('div');
     // this must match the play handler exactly, or cards look live when
     // they're locked (before the roll, or while a 7 is unresolved)
+    //
+    // THE BUG: canAct requires G.turn===ME, which is false during the
+    // opponent's turn by definition — so every card in hand rendered as
+    // 'spent' (dimmed) while defending, including ones you could easily
+    // afford. Blocking has its own eligibility: does it deal damage, and
+    // can you pay for it out of the DEFENCE budget, not the turn energy.
+    const defending=G.pendingAtk&&G.pendingAtk.defPi===ME;
     const canAct=G.turn===ME&&G.phase!=='over'&&G.rolled&&!G.mustRobber;
-    const afford=canAct&&p.energy>=costOf(c);
+    const afford=defending
+      ?(blockPower(c)>0&&costOf(c)<=defBudget(ME)&&!blockSel.includes(c))
+      :(canAct&&p.energy>=costOf(c));
     // COMBO GLOW, asked for directly: a card that would actually fire a combo
     // if played RIGHT NOW gets a visible ring. Deliberately computed from the
     // same two rules that resolve the combo (resonancePreview for cross-colour
@@ -9976,6 +10000,7 @@ function renderHand(){
       else if(willResonate)combo=' combo';
     }
     d.className='card '+c.kind+(afford?' playable':' spent')+
+      (defending&&blockSel.includes(c)?' committed':'')+
       (forge&&c.kind==='unit'?' forged':'')+(c.taunt?' tankcard':'')+
       (c.kind==='unit'&&c.arch?' a-'+c.arch:'')+combo;
     // held-hand arc: outer cards tilt away and sit lower
@@ -10873,7 +10898,13 @@ $('handpanelBackdrop').onclick=()=>{
   if(G.pendingAtk&&G.pendingAtk.defPi===ME)return;
   closeHandPanel();
 };
-$('handpanelClose').onclick=closeHandPanel;
+$('handpanelClose').onclick=()=>{
+  // Same guard as the backdrop: while an attack is waiting on you the hand
+  // must stay reachable, so the explicit close button cannot strand you
+  // with an unanswered attacker either.
+  if(G.pendingAtk&&G.pendingAtk.defPi===ME)return;
+  closeHandPanel();
+};
 $('end').onclick=()=>{
   if(G.turn!==ME||G.phase==='over'||!G.rolled)return;
   const opts=unspentOptions();
@@ -11873,6 +11904,10 @@ $('spoilsClose').onclick=()=>{
 };
 $('omenHigh').onclick=()=>setOmen('high');
 $('asSkip').onclick=()=>{
+  closeBlockPrompt();
+  finishBlock(null);
+};
+$('hpTakeHit').onclick=()=>{
   closeBlockPrompt();
   finishBlock(null);
 };
