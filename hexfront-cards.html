@@ -853,12 +853,12 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
 }
 /* card interior: gem, art well, name plate, stats */
 .cgem{
-  position:absolute;top:-7px;left:-6px;width:31px;height:31px;
+  position:absolute;top:-9px;left:-8px;width:38px;height:38px;
   background-image:url('art/badge-cost.png');background-size:contain;
   background-position:center;background-repeat:no-repeat;
   z-index:4;
   display:flex;align-items:center;justify-content:center;
-  font-size:15px;font-weight:800;color:#2a1a0c;
+  font-size:19px;font-weight:800;color:#2a1a0c;
   text-shadow:0 1px 1px rgba(255,235,180,.5);
 }
 .cart{
@@ -904,12 +904,18 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
   padding:3px 0 0;margin-top:1px;
 }
 .catk{
-  position:absolute;bottom:-7px;right:-6px;width:33px;height:33px;
+  /* swapped to bottom-LEFT (was bottom-right) so ATK and HP read left-to-
+     right the way the game already reads cost-to-body: cost top-left, attack
+     bottom-left, health bottom-right — attack and defence share a side of
+     the card the eye already scans, health sits opposite where the old
+     single-defender armour badge used to live, so nothing moved that people
+     had already learned to look for. */
+  position:absolute;bottom:-9px;left:-8px;width:38px;height:38px;
   z-index:4;
   background-image:url('art/badge-attack.png');background-size:contain;
   background-position:center;background-repeat:no-repeat;
   display:flex;align-items:center;justify-content:center;
-  font-size:16px;font-weight:800;color:#fff;
+  font-size:19px;font-weight:800;color:#fff;
   text-shadow:0 1px 2px rgba(0,0,0,.9);
 }
 .catk.util{background-image:url('art/badge-spell.png')}
@@ -2428,12 +2434,13 @@ header .sub{cursor:pointer}
    sit bottom-RIGHT, directly underneath .catk, which is why armour was
    invisible on every defender card. */
 .cbody{
-  position:absolute;left:-6px;bottom:-7px;z-index:4;
+  /* swapped to bottom-RIGHT (was bottom-left) — see .catk for the reasoning */
+  position:absolute;right:-8px;bottom:-9px;z-index:4;
   display:flex;align-items:center;justify-content:center;
-  width:33px;height:33px;
+  width:38px;height:38px;
   background-image:url('art/badge-armor.png');background-size:contain;
   background-position:center;background-repeat:no-repeat;
-  font-size:16px;font-weight:800;color:#fff;
+  font-size:19px;font-weight:800;color:#fff;
   text-shadow:0 1px 2px rgba(0,0,0,.9);
 }
 /* A scarred survivor — came back from a block at reduced health. Red so a
@@ -2846,7 +2853,6 @@ body.land #atkStage{height:66vh}
 body.land .as-inner{gap:3px;padding:4px}
 body.land .as-label{font-size:11px}
 body.land .as-tally{font-size:12.5px}
-body.land .as-skip{padding:6px 14px;font-size:12px}
 #atkStage.hide{display:none}
 .as-veil{
   position:absolute;inset:0;
@@ -2901,11 +2907,7 @@ body.land .as-skip{padding:6px 14px;font-size:12px}
   font-size:12px;font-weight:800;color:#f0e0b8;
 }
 .as-chip .x{opacity:.7;margin-left:5px}
-.as-skip{
-  pointer-events:auto;margin-top:2px;padding:8px 16px;border-radius:10px;
-  border:1px solid rgba(232,215,176,.3);background:rgba(20,16,12,.9);
-  color:rgba(232,215,176,.9);font-size:13px;font-weight:800;
-}
+
 /* the whole stage lights up as a drop target while a card is being dragged */
 #atkStage.target .as-veil{
   box-shadow:inset 0 0 0 2px rgba(232,215,176,.35);
@@ -3585,7 +3587,6 @@ body.land .as-skip{padding:6px 14px;font-size:12px}
     <div class="as-card" id="asCard"></div>
     <div class="as-tally hide" id="asTally"></div>
     <div class="as-committed" id="asCommitted"></div>
-    <button id="asSkip" class="as-skip">Take the hit</button>
   </div>
 </div>
 <div class="ovl hide" id="debug">
@@ -7362,7 +7363,20 @@ function offerBlock(card,attacker){
   // Empty hand, or nothing affordable, means the hit simply lands — there is
   // no forging or buying on the opponent's turn (§4.3).
   const cands=blockCandidates(defPi);
-  if(!cands.length){finishBlock(null);return;}
+  if(!cands.length){
+    // THIS WAS SILENT. Your defence budget is spent down cumulatively across
+    // every block you make in a single opponent turn (see startTurn's
+    // refill), so the FIRST couple of attacks in a turn might be blockable
+    // and a LATER one in the same turn genuinely isn't — same opponent turn,
+    // different outcome, and with no explanation it reads as "sometimes the
+    // game just won't let me block." Say why, once, briefly.
+    const why=!def.hand.length?'Empty-handed':
+      def.defEnergy<=0?'No energy left to block':
+      'Nothing in hand can stop it';
+    toast(why,1600);
+    finishBlock(null);
+    return;
+  }
   showBlockPrompt(card,defPi,cands);
 }
 
@@ -8214,8 +8228,15 @@ function playCard(card){
     // the opponent to block and they resolve immediately as before.
     if(!isDefender(card)&&blockingEnabled()){
       p.hand=p.hand.filter(c=>c!==card);
-      offerBlock(card,G.turn);
+      // THE BUG: this was set AFTER offerBlock, which for an AI defender
+      // resolves SYNCHRONOUSLY (aiChooseBlock -> finishBlock happen inline,
+      // not on a timer) — so finishBlock had already set G.lastFlight to the
+      // real hit, and this line immediately wiped it back to null. The
+      // result: damage landed correctly, but the flight animation that
+      // shows it landing never played, and the only sign anything happened
+      // was the hero's HP number being different next time you looked.
       G.lastFlight=null;
+      offerBlock(card,G.turn);
       return card.name+' attacks…';
     }
     const r=resolveUnit(card,G.turn,true);
@@ -11903,10 +11924,11 @@ $('spoilsClose').onclick=()=>{
   renderPurse();renderSpoilsBtn();
 };
 $('omenHigh').onclick=()=>setOmen('high');
-$('asSkip').onclick=()=>{
-  closeBlockPrompt();
-  finishBlock(null);
-};
+// Only one Take-the-hit button now — the one docked in the hand panel
+// footer, where your thumb already is. The one that used to sit directly
+// under the attacker card duplicated it and ate space on an already tight
+// stage for no benefit; the hand panel is force-open the whole time anyway
+// (see showBlockPrompt), so its button is always reachable.
 $('hpTakeHit').onclick=()=>{
   closeBlockPrompt();
   finishBlock(null);
