@@ -1563,18 +1563,15 @@ body.land .hperms{max-width:100%}
 body.land .plate.you .plate-extra{order:4}
 body.land .plate .plate-extra{position:static;left:auto;right:auto;top:auto;bottom:auto}
 
-/* Redesigned as ONE horizontal row along the top of the right edge —
-   deliberately NOT sharing the narrow bottom-anchored rail with
-   forge/mystery/end any more. The old 2x3 grid lived inside that rail and
-   needed --gemMaxH/--railR arithmetic (still published by layout(), just
-   unused here now) purely to avoid growing tall enough to reach the
-   buttons below. Docking the strip to the TOP instead — right under the
-   help/costs/mute/log icon row, same top offset those already clear —
-   makes that whole clearance problem structurally impossible rather than
-   carefully avoided: gems and buttons now occupy opposite ends of the
-   screen and can never meet, regardless of hand size or content length.
-   Width is fit-content instead of the rail's fixed --railR, so it is
-   exactly as wide as six small hexes need and no wider. */
+/* ONE vertical column along the right edge — single file, top to bottom,
+   never side-by-side. Docked to the TOP (same offset the help/costs/mute/
+   log icon row already clears) rather than stretching the full rail height,
+   with a max-height + scroll safety net so a column of six can never grow
+   down into the forge/mystery/end buttons anchored at the BOTTOM — the
+   same clearance idea the old 2-column grid used (--gemMaxH, published by
+   layout() from the buttons' own height), just applied to one column
+   instead of two. Width is fit-content: exactly as wide as one hex needs,
+   not the old grid's full rail width. */
 body.land .gempanel{
   position:absolute;left:auto;right:0;
   top:calc(38px + var(--insetT,env(safe-area-inset-top)));
@@ -1592,10 +1589,15 @@ body.land .gempanel-label{
 }
 body.land .gemstrip{
   position:static;left:auto;right:auto;bottom:auto;width:auto;
-  /* ONE row, six across, never wraps — the whole point of this pass. */
-  display:flex;flex-wrap:nowrap;align-items:flex-end;
+  /* ONE column, single file, never wraps into a second column. */
+  display:flex;flex-direction:column;flex-wrap:nowrap;align-items:center;
   gap:4px;padding:0;
+  /* Same ceiling the old grid used, so a tall column still can't reach the
+     buttons below on a short screen — it scrolls instead of colliding. */
+  max-height:var(--gemMaxH,none);
+  overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
 }
+body.land .gemstrip::-webkit-scrollbar{display:none}
 /* Sized off --railBase (0.24x) rather than a fixed px, same pattern as the
    hero cluster badges — a flat bump looked good on a typical phone but
    overflowed the smallest tested rail (7 items need 3 rows even at 3-per-
@@ -1614,14 +1616,15 @@ body.land .gemstrip{
    every rail width and every inset, instead of true-at-the-sizes-tested. */
 body.land{ --gemGap:2px; }   /* 4 -> 2px, asked for the segments to sit closer together */
 body.land .gseg{
-  /* Sizing used to be a fraction of the grid CELL (a 1fr column, so it
-     scaled with --railR). There is no grid any more — one flex row, fixed
-     item size — so this is a straightforward clamped px value instead: big
-     enough to read on any phone, small enough that six of them plus gaps
-     and padding never exceed a comfortable strip width. aspect-ratio keeps
-     the hex proportioned without a separate explicit height. */
-  width:clamp(22px,6.2vw,30px);aspect-ratio:1 / 1.15;height:auto;
-  font-size:clamp(9px,2.1vw,12.5px);
+  /* One column now, not six-across — width isn't fighting five neighbours
+     for horizontal space any more, so this can sit a bit larger than the
+     single-row version while staying well clear of a typical rail width.
+     max-height on the STRIP (with scroll) is what stops a tall column from
+     ever reaching the buttons, not a smaller tile — see body.land
+     .gemstrip. */
+  width:clamp(26px,7.5vw,36px);aspect-ratio:1 / 1.15;height:auto;
+  font-size:clamp(10.5px,2.6vw,14px);
+  flex:0 0 auto;
 }
 /* Font/padding were fixed regardless of viewport — width already scaled
    with the rail (via --railR) but text stayed phone-sized inside a button
