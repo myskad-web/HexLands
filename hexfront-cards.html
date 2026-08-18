@@ -1767,7 +1767,12 @@ body.land #menu .menu-note{margin-top:6px;font-size:10.6px;line-height:1.3}
    the fan read as floating in the board's middle instead of sitting like a
    hand at the bottom of the screen. */
 body.land .handpanel-sheet{
-  max-height:78vh;
+  /* --handPanelMax is computed in layout() as "whatever's left after the
+     attacker stage takes its own hard-capped share" — see the stage's own
+     comment above. Was a flat 78vh, independent of the stage's 66vh, which
+     is how the two ended up overlapping on a short screen in the first
+     place: 66% + 78% is nowhere close to bounded by 100%. */
+  max-height:var(--handPanelMax,60vh);
   bottom:calc(6px + var(--insetB,env(safe-area-inset-bottom)));
 }
 /* Cards are also sized for a full-height portrait screen (96x152) with no
@@ -2813,8 +2818,11 @@ header .sub{cursor:pointer}
   pointer-events:none;
 }
 /* Landscape phones have very little height, so the stage takes more of it
-   and everything inside tightens up. */
-body.land #atkStage{height:66vh}
+   and everything inside tightens up. --atkStageMax is a hard computed cap
+   (see layout()) shared with the hand panel's own max-height below, so the
+   two can never grow into each other regardless of screen size — the old
+   66vh was just a guess that happened to usually leave enough room. */
+body.land #atkStage{height:var(--atkStageMax,58vh)}
 body.land .as-inner{gap:3px;padding:4px}
 body.land .as-label{font-size:11px}
 body.land .as-tally{font-size:12.5px}
@@ -3832,15 +3840,26 @@ const BUILDING_ART={village:{},city:{}};
 // Same probe-and-fallback shape as BUILDING_ART: missing files mean the
 // hand-drawn procedural road (still fully functional, still rotates freely)
 // stays in effect. Safe with 0, 1, 2, or 3 files present.
-const ROAD_ART={};
+const ROAD_ART={ns:{},slash:{},backslash:{}};
 (function loadRoadArt(){
+  // Same three-tier shape as BUILDING_ART now: a per-colour image (no tint,
+  // already the right colour), then a single neutral image (tinted at
+  // runtime), then the procedural fallback. Bridges were tint-only at
+  // first, but the actual generated art has been full-colour pairs from
+  // the start (red/blue crystal variants, not a neutral stone bridge to
+  // wash a colour over) — matching how the art is actually being made
+  // rather than how the code originally assumed it would be.
   const paths={
-    ns:'art/roads/bridge-ns',        // straight up/down connection
-    slash:'art/roads/bridge-slash',      // "/" — bottom-left to top-right
-    backslash:'art/roads/bridge-backslash',  // "\" — top-left to bottom-right
+    'ns.blue':'art/roads/bridge-ns-blue', 'ns.red':'art/roads/bridge-ns-red',
+    'ns.neutral':'art/roads/bridge-ns',
+    'slash.blue':'art/roads/bridge-slash-blue', 'slash.red':'art/roads/bridge-slash-red',
+    'slash.neutral':'art/roads/bridge-slash',
+    'backslash.blue':'art/roads/bridge-backslash-blue', 'backslash.red':'art/roads/bridge-backslash-red',
+    'backslash.neutral':'art/roads/bridge-backslash',
   };
-  Object.keys(paths).forEach(axis=>{
-    loadArtAnyExt(paths[axis],img=>{ ROAD_ART[axis]=img; });
+  Object.keys(paths).forEach(key=>{
+    const[axis,variant]=key.split('.');
+    loadArtAnyExt(paths[key],img=>{ ROAD_ART[axis][variant]=img; });
   });
 })();
 // Which of the 3 axes does a road between these two screen points sit on?
@@ -5158,13 +5177,36 @@ function layout(){
     // max already exceeded hexrowH there) and only matters on the small one
     // where it was actually breaking.
     const plateMax=Math.max(
-      Math.floor((h-8-inset.t-inset.b)/2),
+      Math.floor((vh-8-inset.t-inset.b)/2),
       Math.ceil(hexrowH+8));
     // plate padding (2+2) + the flex gap between hexrow and the chip list
     const extraMax=Math.max(0,Math.floor(plateMax-4-hexrowH-4));
     document.body.style.setProperty('--armDip',armDip+'px');
     document.body.style.setProperty('--plateMax',plateMax+'px');
     document.body.style.setProperty('--extraMax',extraMax+'px');
+    // THE STAGE/HAND OVERLAP BUG, reported directly with screenshots: the
+    // attacker stage (top:0, height:66vh) and the hand panel sheet
+    // (bottom-anchored, max-height:78vh) are two independent containers
+    // that each claim a generous PERCENTAGE of the viewport with no shared
+    // boundary — on a short enough screen, 66% from the top and 78% from
+    // the bottom add up to well over 100%, and the two simply grow into
+    // each other. Same root shape as the armour-clipping bug above: a
+    // percentage guess standing in for an actual constraint. Fixed the
+    // same way — give each region a computed, mutually exclusive share of
+    // the real viewport height instead of two numbers that happen to
+    // usually not collide. fitStageCard() already shrinks the attacker
+    // card to whatever room the stage actually has, so tightening the
+    // stage's own budget here also naturally answers "make the card
+    // smaller" and "move it higher" as the same fix, not two separate ones.
+    // Uses vh (window.innerHeight, with fallback to h) rather than the raw
+    // canvas-based h — same variable the landscape-detection check just
+    // above already relies on for this exact reason: h alone is 0 until
+    // the canvas has actually been laid out once, which on some paths
+    // (and in headless test environments) hasn't happened yet.
+    const stageMax=Math.round(vh*0.50);
+    const handMax=Math.max(80,Math.round(vh-stageMax-6-inset.b));
+    document.body.style.setProperty('--atkStageMax',stageMax+'px');
+    document.body.style.setProperty('--handPanelMax',handMax+'px');
     // HP is now the dominant badge in each hero cluster, with energy/armour
     // and the commander as smaller satellites tucked at its shoulders,
     // instead of three equal-size badges stacked in one column. The old
@@ -5865,28 +5907,34 @@ const ART=(function(){
     g.beginPath();g.moveTo(x-k*.38,y-k*.48);g.lineTo(x+k*.38,y-k*.48);g.stroke();
   }
   // road = a rampart: earth berm, timber cross-ties, owner colour on the crown
-  function road(g,ax,ay,bx,by,k,col){
+  function road(g,ax,ay,bx,by,k,col,colorKey){
     const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy)||1;
     // A matching pre-rendered bridge draws UNROTATED at its fixed painted
     // angle — rotating a baked-lighting isometric sprite would spin its
     // shadows away from the rest of the board, which is exactly why this
     // needs 3 assets instead of the 1 the procedural version gets away
-    // with. classifyRoadAxis picks the axis; if that axis's art hasn't
-    // been supplied yet, this falls through to the procedural piece below
-    // exactly like BUILDING_ART's fallback does.
+    // with. classifyRoadAxis picks the axis; per-colour art for that axis
+    // draws as-is (no tint — it's already the right colour), a single
+    // neutral image tints at runtime same as before, and if neither
+    // exists this falls through to the procedural piece below.
     const axis=classifyRoadAxis(ax,ay,bx,by);
-    const art=ROAD_ART[axis];
+    const tier=ROAD_ART[axis]||{};
+    const art=tier[colorKey]||tier.neutral;
+    const tint=!tier[colorKey];   // only tint the neutral fallback
     if(art){
       g.save();
       g.translate((ax+bx)/2,(ay+by)/2);
       const dw=len*1.02, dh=k*0.9;
       g.drawImage(art,-dw/2,-dh/2,dw,dh);
       // same owner-colour tint pass as buildings, so a bridge is still
-      // identifiable as "yours" vs "theirs" at a glance
+      // identifiable as "yours" vs "theirs" at a glance — skipped for
+      // per-colour art, which is already the right colour
+      if(tint){
       g.globalCompositeOperation='source-atop';
       g.globalAlpha=.35;
       g.fillStyle=col;
       g.fillRect(-dw/2,-dh/2,dw,dh);
+      }
       g.restore();
       return;
     }
@@ -6390,7 +6438,7 @@ function draw(){
   for(const e of board.edges.values()){
     const ep=edgePos(e,S,ox,oy);
     if(e.owner!=null){
-      ART.road(cx,ep.ax,ep.ay,ep.bx,ep.by,S,e.owner===ME?'#4d86c8':'#c04a34');
+      ART.road(cx,ep.ax,ep.ay,ep.bx,ep.by,S,e.owner===ME?'#4d86c8':'#c04a34',e.owner===ME?'blue':'red');
     }else if(roadFocus&&roadNet0&&(roadNet0.has(e.a.key)||roadNet0.has(e.b.key))){
       // A quiet dashed survey line — present, tappable, and completely still.
       // The old version pulsed and dimmed the whole board behind it, which is
@@ -7664,6 +7712,14 @@ function showClash(attackerCard,blockerCards){
   const st=$('atkStage');
   st.classList.remove('hide');
   st.classList.add('clash');
+  // THE MESSY-OVERLAP BUG, reported directly with a screenshot: this is a
+  // pure reveal, nothing to drag, nothing to tap — but the player's own
+  // hand fan (if it happened to be open, e.g. left over from an earlier
+  // block on this same turn) was sitting right underneath it with no
+  // relationship between the two, making it hard to read which of the
+  // opponent's cards actually stopped the attack. Force it closed for the
+  // reveal; there is nothing in it the player needs during this moment.
+  closeHandPanel();
   $('asLabel').textContent='Opponent blocks!';
   $('asCard').innerHTML='<div class="card '+attackerCard.kind+
     (attackerCard.kind==='unit'&&attackerCard.arch?' a-'+attackerCard.arch:'')+'">'+
