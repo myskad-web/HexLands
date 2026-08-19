@@ -1793,8 +1793,8 @@ body.land .handpanel-sheet{
    territory and undo the non-overlap split computed in layout(). */
 body.land .handpanel.defending .handpanel-sheet,
 .handpanel.defending .handpanel-sheet{
-  bottom:calc(var(--defendLift,44px) + var(--insetB,env(safe-area-inset-bottom)));
-  max-height:calc(var(--handPanelMax,60vh) - var(--defendLift,44px) + 6px);
+  bottom:calc(var(--defendLift,88px) + var(--insetB,env(safe-area-inset-bottom)));
+  max-height:calc(var(--handPanelMax,60vh) - var(--defendLift,88px) + 6px);
 }
 /* Cards are also sized for a full-height portrait screen (96x152) with no
    landscape-specific reduction — on a ~390px-tall phone that alone was
@@ -2437,6 +2437,17 @@ header .sub{cursor:pointer}
 /* A scarred survivor — came back from a block at reduced health. Red so a
    weakened card reads instantly in a fanned hand. */
 .cbody.hurt{color:#ff9a8a;text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 6px rgba(200,60,40,.7)}
+/* Forge rank — one gem pip per band, in the card's own gem colour. Sits on
+   the card's top edge, clear of the cost badge (top-left) and the art. */
+.cforge{
+  position:absolute;top:3px;right:5px;z-index:5;
+  display:flex;gap:2px;align-items:center;
+}
+.cforge i{
+  display:block;width:6px;height:7px;border-radius:1px;
+  transform:rotate(45deg);
+  box-shadow:0 0 4px currentColor,inset 0 0 0 .5px rgba(255,255,255,.55);
+}
 /* Archetype skins. A card should look like the kind of thing it is before
    you've read a word of it: folk are parchment and brass, beasts are hide and
    green, machines are riveted steel, spirits are cold violet. */
@@ -2922,8 +2933,17 @@ body.land .as-tally{font-size:12.5px}
 
 /* ---- forge / fusion bench (popup, not a menu screen) ---- */
 #forge.forge-pop{position:fixed;inset:0;z-index:64;display:flex;
-  flex-direction:column;align-items:center;justify-content:center;
+  flex-direction:column;align-items:center;justify-content:flex-start;
   pointer-events:none}
+/* The hand fan is open underneath while forging (see openForge), so the
+   bench sits in the TOP portion rather than dead centre — same split
+   reasoning as the attacker stage, which shares this screen the same way. */
+.forge-pop .forge-stage{margin-top:calc(4px + var(--insetT,env(safe-area-inset-top)))}
+body.land .forge-pop .forge-stage{margin-top:2px;padding:8px 12px;gap:6px}
+body.land .forge-pop .fuse-slot{width:74px;height:98px}
+body.land .forge-pop .fp-card{width:62px}
+/* the picker duplicates the fan below, so it can be tighter in landscape */
+body.land .forge-pop .fuse-pick{max-height:78px}
 #forge.forge-pop.hide{display:none}
 .forge-veil{
   position:absolute;inset:0;pointer-events:auto;
@@ -2934,12 +2954,19 @@ body.land .as-tally{font-size:12.5px}
 .forge-stage{
   position:relative;pointer-events:auto;
   display:flex;flex-direction:column;align-items:center;gap:8px;
-  padding:4px 10px;max-width:min(96vw,600px);
+  /* The bench needs its OWN solid ground. Without this the slots' own
+     translucent fill let the board hexes show straight through them, which
+     is what made the whole bench read as greyed-out/disabled even though
+     it was fully live. */
+  padding:12px 14px;max-width:min(96vw,600px);
+  background:linear-gradient(180deg,rgba(26,18,10,.97),rgba(12,8,4,.98));
+  border:1px solid rgba(224,179,72,.45);border-radius:16px;
+  box-shadow:0 12px 40px rgba(0,0,0,.75);
 }
 .fuse-bench{display:flex;align-items:center;justify-content:center;gap:8px}
 .fuse-slot{
   flex:0 0 auto;width:88px;height:118px;border-radius:12px;
-  border:1.5px dashed rgba(232,215,176,.3);background:rgba(16,12,8,.82);
+  border:1.5px dashed rgba(232,215,176,.45);background:#140f0a;
   display:flex;align-items:center;justify-content:center;overflow:hidden;
   position:relative;cursor:pointer;transition:box-shadow .18s,border-color .18s;
 }
@@ -2985,7 +3012,7 @@ body.land .as-tally{font-size:12.5px}
 .fuse-pick::-webkit-scrollbar{display:none}
 .fp-card{
   flex:0 0 auto;width:70px;padding:6px;border-radius:10px;
-  border:1.5px solid rgba(232,215,176,.2);background:rgba(18,13,8,.9);
+  border:1.5px solid rgba(232,215,176,.3);background:#1a130c;
   font-weight:700;color:rgba(232,215,176,.92);
   text-align:center;line-height:1.25;cursor:pointer;
   transition:transform .14s,box-shadow .18s,border-color .18s;
@@ -3774,7 +3801,7 @@ body.land .as-tally{font-size:12.5px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.10.6';
+const VERSION='0.10.7';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -6564,22 +6591,31 @@ function draw(){
     if(e.owner!=null){
       ART.road(cx,ep.ax,ep.ay,ep.bx,ep.by,S,e.owner===ME?'#4d86c8':'#c04a34',e.owner===ME?'blue':'red');
     }else if(roadFocus&&roadNet0&&(roadNet0.has(e.a.key)||roadNet0.has(e.b.key))){
-      // A quiet dashed survey line — present, tappable, and completely still.
-      // The old version pulsed and dimmed the whole board behind it, which is
-      // why it was exhausting to leave on.
+      // A dashed survey line marking a buildable road. It used to be
+      // deliberately still — an older version pulsed the whole board and was
+      // exhausting — but "completely still" went too far the other way and
+      // buildable roads were easy to miss entirely. This breathes gently
+      // (a slow brightness+width swell, nothing moves position) so it reads
+      // as available without the board itself flickering.
+      const pulse=0.5+0.5*Math.sin(performance.now()/430);
       cx.save();
       cx.setLineDash([S*0.13,S*0.08]);
       cx.lineCap='butt';
-      cx.strokeStyle='rgba(14,9,3,.75)';
-      cx.lineWidth=S*0.115;
+      cx.strokeStyle='rgba(14,9,3,.8)';
+      cx.lineWidth=S*(0.125+0.02*pulse);
       cx.beginPath();cx.moveTo(ep.ax,ep.ay);cx.lineTo(ep.bx,ep.by);cx.stroke();
-      cx.strokeStyle='rgba(255,226,150,.85)';
-      cx.lineWidth=S*0.07;
+      // a soft glow under the bright core, strongest at the top of the swell
+      cx.strokeStyle='rgba(255,210,110,'+(0.18+0.22*pulse).toFixed(3)+')';
+      cx.lineWidth=S*(0.17+0.05*pulse);
+      cx.beginPath();cx.moveTo(ep.ax,ep.ay);cx.lineTo(ep.bx,ep.by);cx.stroke();
+      cx.strokeStyle='rgba(255,236,175,'+(0.8+0.2*pulse).toFixed(3)+')';
+      cx.lineWidth=S*(0.075+0.018*pulse);
       cx.beginPath();cx.moveTo(ep.ax,ep.ay);cx.lineTo(ep.bx,ep.by);cx.stroke();
       cx.setLineDash([]);
-      cx.fillStyle='rgba(255,232,170,.75)';
-      cx.beginPath();cx.arc(ep.ax,ep.ay,S*0.045,0,7);cx.fill();
-      cx.beginPath();cx.arc(ep.bx,ep.by,S*0.045,0,7);cx.fill();
+      cx.fillStyle='rgba(255,240,190,'+(0.7+0.3*pulse).toFixed(3)+')';
+      const dot=S*(0.05+0.018*pulse);
+      cx.beginPath();cx.arc(ep.ax,ep.ay,dot,0,7);cx.fill();
+      cx.beginPath();cx.arc(ep.bx,ep.by,dot,0,7);cx.fill();
       cx.restore();
     }
   }
@@ -7522,6 +7558,10 @@ function forgeCard(pi,col,band){
   // this gap, fusing two good cards into one slightly better card is a bad
   // trade and nobody would ever use the bench.
   const c=mkForgeUnit(rolled,col,pi,true);
+  // Segment cards are raw material, deliberately: a further point off the
+  // higher bands keeps the gap to a FUSED card wide enough that fusing is
+  // obviously the right move rather than a marginal one.
+  if(c.tier>1&&c.atk>1)c.atk=Math.max(1,c.atk-1);
   c.forged=true;              // marks it as fusable at the bench
   giveCard(pi,c);
   return c;
@@ -7531,7 +7571,12 @@ function forgeCard(pi,col,band){
 // make the roll the whole game, and a flat 1-in-5 Recruit would make it feel
 // like a waste. Villages still raise the ceiling, exactly as they did for
 // the old free drip: expansion is what unlocks the top of the curve.
-const FORGE_BAND_WEIGHTS=[18,30,30,22,15];
+// Steeply decreasing: the better the card, the slimmer the chance. Asked for
+// directly — "cards that would previously cost 2 gems, more chance; the ones
+// for 6 gems, less chance ... the better the card the slighter chance".
+// Recruit is now the common result and Legend is a genuine event
+// (roughly 44 / 27 / 16 / 9 / 4 before the village cap trims the top).
+const FORGE_BAND_WEIGHTS=[44,27,16,9,4];
 function rollForgeBand(pi){
   const cap=Math.min(WB_BANDS.length-1,
     Math.max(1,G.players[pi].villages.length));
@@ -9691,6 +9736,15 @@ function cardFaceHTML(c,pi){
   const realCost=Math.max(0,c.cost-(c.kind==='unit'?(G.costCut||0):0));
   const cheap=realCost<c.cost;
   const atkClass=(c.kind==='unit'?'':(c.kind==='perm'?' build':' util'))+(buffAtk?' buffed':'');
+  // Forge rank pips: a fused card wears one gem per band in its own gem's
+  // colour, so "this came out of the forge, and it's a good one" is legible
+  // at a glance in a fanned hand without reading the title.
+  const rankPips=c.forgeRank
+    ? `<div class="cforge">`+
+      Array.from({length:c.forgeRank},()=>
+        `<i style="background:${(GEM_INFO[c.gem]||{}).hex||'#ffd76a'}"></i>`).join('')+
+      `</div>`
+    : '';
   // a defender's card carries its body as well as its swing
   const bodyBadge=c.taunt?`<div class="cbody">${c.armor!=null?c.armor:c.maxArmor}</div>`:
     // BATTLE SYSTEM: every unit now has a body, and you cannot decide whether
@@ -9719,7 +9773,7 @@ function cardFaceHTML(c,pi){
     `<div class="cplate">${c.name}</div>`+
     `<div class="ctag"${tagStyle}>${c.city?'\u2727 ':c.heavy?'\u2726 ':''}${c.tag}</div>`+stars+
     `<div class="cdesc">${c.desc||''}</div>`+
-    bodyBadge+
+    bodyBadge+rankPips+
     `<div class="catk${atkClass}">${badge}</div>`;
 }
 // Defender rows. Rebuilt wholesale on every change — a wall is at most four
@@ -10393,7 +10447,12 @@ function hud(){
   // NB: hud() already has a `mine` a few lines up (the turn-glow flag) — this
   // is a different question (can I forge right now), so it gets its own name.
   const myBuild=G.phase==='build'&&G.turn===ME;
-  const anyForge=myBuild&&([...GEM_COLS].some(c=>bestBand(ME,c)>=0)
+  // The forge is the FUSION BENCH now — it spends cards, not segments. This
+  // was still gated on "can any colour afford a card", so spending your
+  // segments (the very thing that produces fusable cards) locked you OUT of
+  // the bench that exists to combine them. Reported directly. Gate on what
+  // it actually needs: two fusable cards, or an affordable elite.
+  const anyForge=myBuild&&(fuseCandidates().length>=2
     ||gemsOf(ME).purple>=ELITE_COST);
   const fb=$('forgeBtn');
   if(fb){fb.disabled=!anyForge;fb.classList.toggle('ready',!!anyForge);}
@@ -11081,7 +11140,7 @@ $('cmd').onclick=()=>{
 const BUY_LIMIT=2;
 // Mystery made rarer — asked for directly. Most buys should be a unit;
 // a Mystery is the occasional surprise, not a coin flip.
-const BUY_UNIT_CHANCE=0.80;
+const BUY_UNIT_CHANCE=0.90;
 function buyCard(){
   if(G.phase!=='build'||G.turn!==ME)return;
   // One per turn, same shape as the existing one-village-per-turn rule
@@ -11097,6 +11156,10 @@ function buyCard(){
     // takes segment-made cards only, so buying can't shortcut into it
     const col=GEM_COLS[(Math.random()*GEM_COLS.length)|0];
     card=mkForgeUnit(rollForgeBand(ME),col,ME,true);
+    // The cheapest card source in the game should also be the weakest one.
+    // `weak` already trims a point of attack; this takes another off the
+    // non-Recruit results so a 2-energy buy can't rival a fused unit.
+    if(card.tier>0&&card.atk>1)card.atk=Math.max(1,card.atk-1);
   }else{
     card=mkMystery();
   }
@@ -11257,9 +11320,13 @@ function openForge(){
   if(G.phase!=='build'||G.turn!==ME)return;
   renderForge();
   $('forge').classList.remove('hide');
+  // the fan stays visible while forging — you're picking from your own hand,
+  // so hiding it made the bench feel disconnected from where the cards live
+  openHandPanel();
 }
 function closeForge(){
   $('forge').classList.add('hide');
+  if(G.turn===ME&&G.handOpen)closeHandPanel();
   // drop references to cards that may since have been played or fused
   fuseSel=[null,null];
 }
@@ -11314,6 +11381,10 @@ function applyBoon(c,boon){
   c.boon=boon.label;
   c.boonRare=!!boon.rare;
   c.name=boon.label+' '+c.name;
+  // Forge rank: gem pips in the card's own gem colour, one per band, so a
+  // fused card is identifiable as forged AND as how good a forge it was
+  // without reading the text. Asked for directly.
+  c.forgeRank=Math.max(1,Math.min(5,(c.tier|0)+1));
   c.desc=wbDesc(c);
   return c;
 }
