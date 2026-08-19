@@ -1775,6 +1775,18 @@ body.land .handpanel-sheet{
   max-height:var(--handPanelMax,60vh);
   bottom:calc(6px + var(--insetB,env(safe-area-inset-bottom)));
 }
+/* While defending, the panel's head row carries the "Take the hit" button —
+   and because the head renders BELOW the fan (see the markup order), at the
+   normal 6px bottom offset that button ends up pressed against the screen
+   edge, under the fan, awkward to reach. Lift the whole sheet for the
+   duration of a block. max-height is reduced by the same amount it was
+   lifted, so the top edge doesn't climb into the attacker stage's own
+   territory and undo the non-overlap split computed in layout(). */
+body.land .handpanel.defending .handpanel-sheet,
+.handpanel.defending .handpanel-sheet{
+  bottom:calc(var(--defendLift,44px) + var(--insetB,env(safe-area-inset-bottom)));
+  max-height:calc(var(--handPanelMax,60vh) - var(--defendLift,44px) + 6px);
+}
 /* Cards are also sized for a full-height portrait screen (96x152) with no
    landscape-specific reduction — on a ~390px-tall phone that alone was
    enough to push the fan's top edge into the board's upper half even
@@ -2899,6 +2911,60 @@ body.land .as-tally{font-size:12.5px}
 }
 .as-chip .x{opacity:.7;margin-left:5px}
 
+/* ---- forge / fusion bench ---- */
+.forge-box{max-width:min(94vw,560px)}
+.fuse-bench{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  margin:10px 0 6px;
+}
+.fuse-slot{
+  flex:0 0 auto;width:84px;height:112px;border-radius:10px;
+  border:1.5px dashed rgba(232,215,176,.32);background:rgba(20,16,12,.6);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  position:relative;cursor:pointer;
+}
+.fuse-slot.filled{border-style:solid;border-color:var(--gold-hot)}
+.fuse-slot.result{border-color:rgba(224,179,72,.55);cursor:default}
+.fuse-slot.result.ready{
+  border-style:solid;border-color:#ffd76a;
+  box-shadow:0 0 14px rgba(255,200,90,.45);
+}
+.fs-empty{font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:rgba(232,215,176,.4)}
+.fuse-slot .mini{width:100%;padding:5px 5px 6px;text-align:center}
+.fuse-slot .mini .mn{font-size:10.5px;font-weight:800;color:#f0e0b8;
+  line-height:1.2;margin-bottom:3px}
+.fuse-slot .mini .mt{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+  color:rgba(232,215,176,.55);margin-bottom:5px}
+.fuse-slot .mini .ms{font-size:12px;font-weight:800;color:#e8d7b0}
+.fuse-slot .mini .ms b{color:#ff9a8a}
+.fuse-arrow{font-size:17px;font-weight:800;color:rgba(232,215,176,.5)}
+.fuse-note{font-size:12px;font-weight:700;text-align:center;min-height:16px;
+  color:rgba(232,215,176,.75)}
+.fuse-note.ok{color:#7fd18a}
+.fuse-note.no{color:#e08a7a}
+.fuse-pick-label{
+  font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;
+  color:rgba(224,179,72,.6);margin:8px 0 5px;text-align:center;
+}
+.fuse-pick{
+  display:flex;flex-wrap:wrap;gap:5px;justify-content:center;
+  max-height:26vh;overflow-y:auto;scrollbar-width:none;
+}
+.fuse-pick::-webkit-scrollbar{display:none}
+.fp-card{
+  flex:0 0 auto;min-width:76px;padding:6px 7px;border-radius:9px;
+  border:1px solid rgba(232,215,176,.22);background:rgba(20,16,12,.75);
+  font-size:11px;font-weight:700;color:rgba(232,215,176,.92);
+  text-align:left;line-height:1.3;cursor:pointer;
+}
+.fp-card.on{border-color:var(--gold-hot);background:rgba(120,88,32,.5)}
+.fp-card.dim{opacity:.35;cursor:default}
+.fp-card .fpn{display:block;font-size:10.5px}
+.fp-card .fps{display:block;color:var(--gold-hot)}
+.fuse-empty{font-size:11.5px;color:rgba(232,215,176,.5);text-align:center;padding:10px}
+
+
 /* the whole stage lights up as a drop target while a card is being dragged */
 #atkStage.target .as-veil{
   box-shadow:inset 0 0 0 2px rgba(232,215,176,.35);
@@ -3414,7 +3480,7 @@ body.land .as-tally{font-size:12.5px}
     <div class="gemstrip" id="gemstrip"></div>
   </div>
   <button id="forgeBtn" class="endbtn forgebtn" disabled>Forge</button>
-  <button id="buyBtn" class="endbtn buybtn" disabled>Mystery 2⚡</button>
+  <button id="buyBtn" class="endbtn buybtn" disabled>Card 2⚡</button>
   <button id="end" class="endbtn" disabled>End turn</button>
   <div class="handstack" id="handstack">
     <div class="hs-fan" id="hsFan"></div>
@@ -3427,7 +3493,7 @@ body.land .as-tally{font-size:12.5px}
     <div class="handpanel-sheet">
       <div class="hand fanwrap" id="hand"><div class="handempty">Your hand is empty.</div></div>
       <div class="handpanel-head" id="handpanelHead">
-        <button id="buyBtnPanel" class="hp-buy" disabled>Mystery 2⚡</button>
+        <button id="buyBtnPanel" class="hp-buy" disabled>Card 2⚡</button>
         <button class="handpanel-close" id="handpanelClose">✕</button>
         <button id="hpTakeHit" class="hp-buy hp-hit hide">Take the hit</button>
       </div>
@@ -3547,15 +3613,25 @@ body.land .as-tally{font-size:12.5px}
 </div>
 <div class="ovl hide" id="forge">
   <div class="ovl-backdrop" id="forgeBackdrop"></div>
-  <div class="ovl-box">
+  <div class="ovl-box forge-box">
     <div class="ovl-step">The forge</div>
-    <div class="ovl-title">Spend your segments</div>
+    <div class="ovl-title">Combine cards into stronger units</div>
     <div class="ovl-body" id="forgeBody"></div>
-    <div id="forgeRows"></div>
-    <div class="ovl-actions">
-      <span class="spacer"></span>
-      <button id="forgeClose" class="go">Done</button>
+    <div class="fuse-bench">
+      <div class="fuse-slot" id="fuseA" data-slot="0"><span class="fs-empty">Slot 1</span></div>
+      <div class="fuse-arrow">+</div>
+      <div class="fuse-slot" id="fuseB" data-slot="1"><span class="fs-empty">Slot 2</span></div>
+      <div class="fuse-arrow">=</div>
+      <div class="fuse-slot result" id="fuseR"><span class="fs-empty">Result</span></div>
     </div>
+    <div class="fuse-note" id="fuseNote"></div>
+    <div class="ovl-actions">
+      <button id="fuseGo" class="go" disabled>Forge</button>
+      <span class="spacer"></span>
+      <button id="forgeClose">Done</button>
+    </div>
+    <div class="fuse-pick-label">Your segment-forged cards</div>
+    <div id="forgeRows" class="fuse-pick"></div>
   </div>
 </div>
 <div class="ovl hide" id="omen">
@@ -3664,7 +3740,7 @@ body.land .as-tally{font-size:12.5px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.10.3';
+const VERSION='0.10.5';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -4057,6 +4133,10 @@ const CRAFT_COST=2, CRAFT_DISTINCT=3;
 // ~10 gems per colour per game, so Recruit lands ~round 2, Elite ~round 4,
 // and Legend is a genuine save-up rather than a lottery ticket.
 const FORGE_COST=[2,3,4,5,6];
+// Segments now buy a card at one flat price with a random band — see
+// forgeCard. 4 is the old ladder's midpoint, so the average card per
+// segment is roughly unchanged; what changes is that you no longer choose.
+const SEGMENT_CARD_COST=4;
 const ELITE_COST=2;   // purple gems per elite
 
 /* ---------------- resonance: the combo layer ----------------
@@ -4247,10 +4327,13 @@ function gemTotal(pi){
   return GEM_COLS.reduce((s,c)=>s+g[c],0)+g.purple;
 }
 // highest band this colour can currently forge, or -1
+// "Can this colour buy a card right now?" Used for the gem strip's `can`
+// affordance and the Forge button's enabled state. There is no band ladder
+// any more (flat SEGMENT_CARD_COST, random band — see forgeCard), so this
+// returns 0 for "yes, affordable" and -1 for no, keeping the >=0 checks at
+// every call site working unchanged.
 function bestBand(pi,col){
-  const have=gemsOf(pi)[col];
-  for(let b=FORGE_COST.length-1;b>=0;b--)if(have>=FORGE_COST[b])return b;
-  return -1;
+  return gemsOf(pi)[col]>=SEGMENT_CARD_COST?0:-1;
 }
 function canCraftGem(pi){
   const g=gemsOf(pi);
@@ -6078,7 +6161,14 @@ function drawStructure(hx,x,y,dim,big){ART.structure(hx,x,y,dim);}
 // Sizes are up from 0.62/0.78 — Dave wanted them larger, and the extra bulk is
 // what lets a silhouette survive on top of the new terrain props.
 function drawVillage(x,y,owner,city){
-  const k=S*(city?0.74:0.60);
+  // Village 0.60 -> 0.70 (asked for directly: settlements read too small on
+  // the board). City raised alongside it, 0.74 -> 0.86, deliberately: a
+  // city is the VISIBLE payoff of upgrading, and at the new village size
+  // the old 0.74 would have left the two nearly indistinguishable — the
+  // upgrade would have stopped looking like one. The ratio between them is
+  // kept roughly as it was (1.23x -> 1.23x) so the hierarchy is unchanged,
+  // just scaled up.
+  const k=S*(city?0.86:0.70);
   // Colour is relative to the viewer, not to the seat number: blue is always
   // "mine", red is always "theirs". Keyed to a literal 0, the guest saw their
   // own settlements in the opponent's colour and vice versa.
@@ -6993,6 +7083,9 @@ const WB_BAND_NUMS=[[6,8],[5,9],[4,10],[3,11],[2,12]];
 // spirits are glass — the multiplier is what makes an archetype feel like a
 // body rather than just a bundle of effects.
 const ARCH_HP={machine:1.3,folk:1.0,beast:0.8,spirit:0.7};
+// How often a forged card rolls its heavier variant. 0.34 -> 0.28 as part of
+// the forge rebalance (see mkUnitV2 for the full reasoning and the numbers).
+const HEAVY_CHANCE=0.28;
 function unitHp(c){
   return Math.max(1,Math.round(((c.atk||0)+(c.cost||0))*(ARCH_HP[c.arch]||1)));
 }
@@ -7163,13 +7256,26 @@ function mkUnitV2(number,terrain,pi,cityGrade,weak){
   // rolls the heavier variant, so the drip can't hand out the best version of
   // a band for nothing while forged cards — the ones you actually paid gems
   // for — roll for it normally.
-  const heavy=weak?false:(cityGrade?true:Math.random()<0.34);
+  //
+  // REBALANCE (forged cards were too strong): the bonus used to be a flat
+  // +2 attack at a 34% chance. Measured across the real roster, that made
+  // the boost INVERTED — a forged card beat the free drip by +59% at band 0
+  // but only +10% at band 4, because +2 on a 1-damage Recruit is a doubling
+  // while +2 on an 8-damage Legend is noise. The worst cases (Medic,
+  // Forager, Courser, Wisp, Bannerman — all 1dmg/2e) turned into 3dmg/3e,
+  // a +100% efficiency jump for one extra energy.
+  // Now scaled by band and slightly rarer: +1 for Recruit..Elite, +2 only
+  // for the two top bands where it's proportionally modest. Simulated at
+  // 200k draws per band — the premium over the drip flattens to a steady
+  // +8..14% across the whole curve instead of 59% -> 10%.
+  const heavy=weak?false:(cityGrade?true:Math.random()<HEAVY_CHANCE);
+  const heavyDmg=u.band<=2?1:2;
   const cityBonus=cityGrade?1:0;
   const c={
     id:cardId++,kind:'unit',unit:uid,tier:u.band,
     name:u.name,tag:WB_BANDS[u.band],sigil:u.sigil,
     heavy:heavy,city:!!cityGrade,
-    atk:u.dmg+(t.dmg||0)+(heavy?2:0)+cityBonus,
+    atk:u.dmg+(t.dmg||0)+(heavy?heavyDmg:0)+cityBonus,
     cost:Math.max(1,u.cost-(t.costDown||0)+(heavy?1:0)),
     heal:u.heal||0,
     energy:(u.energy||0)+(t.energy||0),
@@ -7327,12 +7433,17 @@ function grantRoundCard(pi){
     dbg('block','P'+pi+' redraws scarred '+c.name+' at '+c.curHp+'/'+c.maxHp);
     return c;
   }
-  const band=roundGrantBand(G.round,G.players[pi].villages.length);
-  const col=GEM_COLS[(Math.random()*GEM_COLS.length)|0];
-  const c=mkForgeUnit(band,col,pi,true);   // `true` = the weaker drip version
-  c.granted=true;
-  giveCard(pi,c);
-  return c;
+  // The free per-turn card is GONE — cards now come from buying (2 energy,
+  // random unit or Mystery) or from segments (flat 4, random band). The
+  // drip existed so a gem-starved player could still act; the 2-energy buy
+  // covers that case now, and does it as a decision the player makes rather
+  // than a handout that arrives regardless.
+  //
+  // This function survives ONLY as the scarred-survivor return path (see
+  // above): a card that lived through a block has to come back somewhere,
+  // and this was already where it did. Removing the function outright would
+  // have stranded every scarred card in the pool permanently.
+  return null;
 }
 /* The opening hand. Hearthstone-style: you start with something playable
    rather than an empty grip and a prayer. Always the lowest band, so the
@@ -7352,6 +7463,15 @@ function dealOpeningHand(pi){
 // ---- spending ----
 // Returns the forged card, or null with a reason toasted. Used by both the
 // human forge panel and the AI, so the two can never drift on affordability.
+// Segments now buy a card at a FLAT price with a RANDOM band, rather than
+// letting the player pick which band to buy. The old ladder (2/3/4/5/6 for
+// Recruit..Legend) meant the choice was always "save up for the top rung",
+// so the cheap rungs were dead options and the interesting decision was
+// really just "wait longer". A flat price with a random result makes every
+// forge a real roll, and moves the power decision to the fusion bench —
+// where you combine what you actually rolled — instead of a shop menu.
+// `band` is ignored for colour forges; kept in the signature because the
+// AI and the tests both call this positionally.
 function forgeCard(pi,col,band){
   const g=gemsOf(pi);
   if(col==='purple'){
@@ -7360,12 +7480,29 @@ function forgeCard(pi,col,band){
     const c=mkEliteUnit(pi);
     return giveCard(pi,c)?c:c;
   }
-  const price=FORGE_COST[band];
-  if(price===undefined||g[col]<price)return null;
-  g[col]-=price;
-  const c=mkForgeUnit(band,col,pi);
+  if(g[col]<SEGMENT_CARD_COST)return null;
+  g[col]-=SEGMENT_CARD_COST;
+  const rolled=rollForgeBand(pi);
+  const c=mkForgeUnit(rolled,col,pi);
+  c.forged=true;              // marks it as fusable at the bench
   giveCard(pi,c);
   return c;
+}
+// The random band. Weighted toward the middle rather than flat, so a forge
+// is usually useful and occasionally special — a flat 1-in-5 Legend would
+// make the roll the whole game, and a flat 1-in-5 Recruit would make it feel
+// like a waste. Villages still raise the ceiling, exactly as they did for
+// the old free drip: expansion is what unlocks the top of the curve.
+const FORGE_BAND_WEIGHTS=[18,30,30,22,15];
+function rollForgeBand(pi){
+  const cap=Math.min(WB_BANDS.length-1,
+    Math.max(1,G.players[pi].villages.length));
+  let total=0;
+  const w=FORGE_BAND_WEIGHTS.map((x,i)=>i<=cap?x:0);
+  w.forEach(x=>total+=x);
+  let r=Math.random()*total;
+  for(let i=0;i<w.length;i++){ r-=w[i]; if(r<0)return i; }
+  return 0;
 }
 // Three different colours, two of each, become one purple. The cost is
 // deliberately spread across colours rather than concentrated: it turns a
@@ -7599,6 +7736,10 @@ function showBlockPrompt(card,defPi,cands){
   // than adding a second button to an already full row.
   $('buyBtnPanel').classList.add('hide');
   $('hpTakeHit').classList.remove('hide');
+  // lifts the sheet clear of the bottom edge — the Take-the-hit button
+  // renders below the fan, so at the resting offset it sits right on the
+  // screen edge (see body.land .handpanel.defending .handpanel-sheet)
+  $('handpanel').classList.add('defending');
   renderHand();          // repaint so the hand knows it can be dragged now
 }
 // Cards are a fixed pixel size, so CSS alone cannot shrink one to fit — it
@@ -7696,6 +7837,7 @@ function closeBlockPrompt(){
   blockSel=[];
   $('buyBtnPanel').classList.remove('hide');
   $('hpTakeHit').classList.add('hide');
+  $('handpanel').classList.remove('defending');
   // The panel was force-opened for this attack (see showBlockPrompt). Put it
   // back once the attack is answered so it does not sit over the board for
   // the rest of the opponent's turn — but leave it alone on your own turn,
@@ -8533,11 +8675,11 @@ function startTurn(pi){
       // Say WHY the card is the tier it is when expansion is what's holding
       // it back — an incentive the player can't see won't change how they
       // play, and "settlements gate your card tier" is not guessable.
-      const v=G.players[ME].villages.length;
-      const capped=v<WB_BANDS.length-1 && Math.floor((G.round-1)/3)>v;
-      toast('Reinforcement: <b>'+(gc.name||'unit')+'</b>'+
-        (capped?' — <span class="tdim">settle more to unlock better</span>':''),
-        capped?2600:1800);
+      // only fires for a returning scarred survivor now — the free drip is
+      // gone, so grantRoundCard returns null on the ordinary path
+      toast('Returns to the line: <b>'+(gc.name||'unit')+'</b>'+
+        (gc.curHp<gc.maxHp?' — <span class="tdim">still wounded ('+
+          gc.curHp+'/'+gc.maxHp+')</span>':''),2200);
     }
   }
   // Back to +1 a round, but you open on 2 and every energy outpost you hold
@@ -9184,25 +9326,61 @@ function aiForge(){
     const order=[...GEM_COLS].sort((a,b)=>free(b)-free(a));
     let made=null;
     for(const col of order){
-      const spendable=free(col);
-      // pick the best band the FREE portion can afford, not the whole purse
-      let band=-1;
-      for(let b=FORGE_COST.length-1;b>=0;b--)if(spendable>=FORGE_COST[b]){band=b;break;}
-      if(easy)band=spendable>=FORGE_COST[0]?0:-1;
-      if(band<0)continue;
+      // Flat price, random band now — there is no ladder to shop and no
+      // "hold one back for a better rung" decision left, so the AI simply
+      // spends whenever its FREE segments (build reserve already deducted)
+      // cover the flat cost. The old band-picking logic is gone with the
+      // ladder it was shopping.
+      if(free(col)<SEGMENT_CARD_COST)continue;
       const capped=g[col]>=GEM_CAP;
-      // Hold one band back if a single extra segment would buy a better card,
-      // unless the colour is capped (in which case waiting wastes production).
-      if(!capped&&!easy&&band<FORGE_COST.length-1&&spendable===FORGE_COST[band]&&
-         Math.random()<0.35)continue;
-      made=forgeCard(pi,col,band);
+      made=forgeCard(pi,col,0);
       if(made){
-        dbg('ai','forge: '+made.name+' ('+WB_BANDS[band]+', '+
-          FORGE_COST[band]+' '+col+(capped?', capped':'')+')');
+        dbg('ai','forge: '+made.name+' ('+WB_BANDS[made.tier]+', '+
+          SEGMENT_CARD_COST+' '+col+(capped?', capped':'')+')');
         acted++;break;
       }
     }
     if(!made)break;
+  }
+
+  // 2b. Fuse. The bench is the strongest card source in the game now, so an
+  //     AI that never used it would be permanently behind on card quality —
+  //     the same reason it forges and crafts at all. Prefers same-colour
+  //     pairs (they get the +1 attack bonus) and fuses the two LOWEST cards
+  //     it can, so it trades up its weakest material rather than eating the
+  //     good card it should be playing.
+  if(!easy){
+    let guardF=0;
+    while(room()&&guardF++<3){
+      const pool=(p.hand||[]).filter(c=>c&&c.kind==='unit'&&c.forged&&!c.spent);
+      if(pool.length<2)break;
+      const byCol={};
+      pool.forEach(c=>{(byCol[c.gem]=byCol[c.gem]||[]).push(c);});
+      let pair=null;
+      // same colour first, cheapest two of whichever colour has a pair
+      for(const col of Object.keys(byCol)){
+        if(byCol[col].length>=2){
+          const srt=byCol[col].slice().sort((a,b)=>a.tier-b.tier);
+          pair=[srt[0],srt[1]];break;
+        }
+      }
+      if(!pair){
+        const srt=pool.slice().sort((a,b)=>a.tier-b.tier);
+        pair=[srt[0],srt[1]];
+      }
+      const [a,b]=pair;
+      const band=Math.min(WB_BANDS.length-1,Math.max(a.tier,b.tier)+1);
+      // no gain to be had if both inputs are already Legend
+      if(band<=Math.max(a.tier,b.tier))break;
+      p.hand=p.hand.filter(c=>c!==a&&c!==b);
+      const hi=(b.tier>a.tier)?b:a;
+      const nc=mkForgeUnit(band,hi.gem||a.gem||GEM_COLS[0],pi);
+      nc.forged=true;
+      if(a.gem&&b.gem&&a.gem===b.gem)nc.atk+=1;
+      giveCard(pi,nc);
+      dbg('ai','fuse: '+a.name+' + '+b.name+' -> '+nc.name);
+      acted++;
+    }
   }
 
   // 3. Craft only with genuine leftovers: segments that are sitting on three
@@ -10843,16 +11021,32 @@ $('cmd').onclick=()=>{
   if(NET.on&&txt){netSend('log','Opponent: '+txt);pushState();}
   hud();renderHand();
 };
-function buyMystery(){
+// Buys ONE card for 2 energy — a random unit, or a Mystery. Replaces both
+// the old Mystery-only purchase AND the free per-turn card drip: the drip
+// existed so a gem-starved player could still act, and this covers that
+// while making it a decision instead of a handout. Not knowing which of the
+// two you'll get is the point — it's the cheap, unreliable source, against
+// segments (pricier, unit-only) and the fusion bench (best, but needs
+// material you already own).
+const BUY_UNIT_CHANCE=0.62;
+function buyCard(){
   if(G.phase!=='build'||G.turn!==ME)return;
   // One per turn, same shape as the existing one-village-per-turn rule
   // (G.built, right above). Energy alone didn't limit this — at higher
-  // maxEnergy a single turn could afford several, turning the mystery pile
+  // maxEnergy a single turn could afford several, turning the pile
   // into a bigger lever than forging or building ever were.
   if(G.boughtMystery)return;
   const p=G.players[ME];
   if(p.energy<2)return;
-  const card=mkMystery();
+  let card;
+  if(Math.random()<BUY_UNIT_CHANCE){
+    // a bought unit is deliberately NOT flagged `forged` — the fusion bench
+    // takes segment-made cards only, so buying can't shortcut into it
+    const col=GEM_COLS[(Math.random()*GEM_COLS.length)|0];
+    card=mkForgeUnit(rollForgeBand(ME),col,ME,true);
+  }else{
+    card=mkMystery();
+  }
   p.energy-=2;giveCard(ME,card);G.boughtMystery=true;
   // show what you actually bought before it disappears into the pile — the
   // same 'draw' reveal a rolled card gets, so it flies to the hand stack
@@ -10860,7 +11054,7 @@ function buyMystery(){
   if(NET.on)pushState();
   hud();renderHand();
 }
-$('buyBtn').onclick=buyMystery;
+$('buyBtn').onclick=buyCard;
 
 /* ==================================================================
    GEM STRIP + FORGE PANEL
@@ -10963,11 +11157,22 @@ function renderGemStrip(){
     // and a three-letter tier abbreviation under every non-zero number was
     // working against that more than it was helping.
     el.innerHTML=n;
-    const bandName=band>=0?(col==='purple'?'Elite':WB_BANDS[band]):null;
     el.title=(col==='purple'?'Elite — crafted, never produced'
-      :GEM_INFO[col].role+' — '+(TERRAIN[COL_OF_GEM[col]]||{}).name)+
-      (bandName?' · can forge: '+bandName:'');
-    el.onclick=()=>{if(mine)openForge();};
+      :GEM_INFO[col].role+' — '+(TERRAIN[COL_OF_GEM[col]]||{}).name+
+        ' · '+SEGMENT_CARD_COST+' segments = 1 random card');
+    // Forging no longer has a band to choose (flat price, random band —
+    // see forgeCard), so tapping a gem now FORGES that colour outright
+    // rather than opening a menu to pick a rung that no longer exists.
+    // Purple still opens the forge, where crafting and elites live.
+    el.onclick=()=>{
+      if(!mine)return;
+      if(col==='purple'){openForge();return;}
+      if((g[col]||0)<SEGMENT_CARD_COST){
+        toast('Need '+SEGMENT_CARD_COST+' '+info.role.toLowerCase()+' segments',1600);
+        return;
+      }
+      doForge(col,0);
+    };
     strip.appendChild(el);
   });
   // Craft used to live here as a 7th grid item — asked to remove it and
@@ -11000,102 +11205,124 @@ function openForge(){
   renderForge();
   $('forge').classList.remove('hide');
 }
-function closeForge(){$('forge').classList.add('hide');}
+function closeForge(){
+  $('forge').classList.add('hide');
+  // drop references to cards that may since have been played or fused
+  fuseSel=[null,null];
+}
 function renderForge(){
   const g=gemsOf(ME);
   $('forgeBody').innerHTML=
-    'Segments buy cards. The <b>colour</b> decides the terrain the card is '+
-    'mustered from; <b>how many</b> you spend decides its band.';
+    'Combine <b>two segment-forged cards</b> into one stronger unit. '+
+    'Same colour fuses cleanest; mixing colours still works, but the result '+
+    'takes the stronger card\'s colour.';
+  renderFuse();
+}
+// ---- the fusion bench ----
+// Two segment-forged cards in, one better card out. This is where the power
+// decision lives now that buying a card is a flat random roll: you can't
+// choose what you roll, but you choose what you COMBINE.
+let fuseSel=[null,null];
+// Only cards that came from segments can be fused. Bought cards (2 energy)
+// and scarred survivors are deliberately excluded — otherwise the cheap
+// random buy would feed the best card source in the game, and the fusion
+// bench would just be "buy twice".
+function fusable(c){return c&&c.kind==='unit'&&c.forged&&!c.spent;}
+function fuseCandidates(){return (G.players[ME].hand||[]).filter(fusable);}
+// The result: one band above the better input, capped at Legend. Colour
+// follows the higher-band input (ties go to slot 1) so a mixed fusion has a
+// predictable, readable outcome rather than a coin flip the player can't
+// plan around.
+function fusePreview(a,b){
+  if(!a||!b)return null;
+  const hi=(b.tier>a.tier)?b:a;
+  const band=Math.min(WB_BANDS.length-1,Math.max(a.tier,b.tier)+1);
+  return {band,col:hi.gem||a.gem||GEM_COLS[0],
+          sameCol:(a.gem&&b.gem&&a.gem===b.gem)};
+}
+function doFuse(){
+  const [a,b]=fuseSel;
+  if(!fusable(a)||!fusable(b)||a===b)return;
+  const pv=fusePreview(a,b);
+  if(!pv)return;
+  const p=G.players[ME];
+  p.hand=p.hand.filter(c=>c!==a&&c!==b);
+  const c=mkForgeUnit(pv.band,pv.col,ME);
+  c.forged=true;                  // a fused card can be fused again
+  // Same-colour fusion is the clean line and gets a small edge, so the
+  // "combine two reds" case the design asked for is genuinely the best use
+  // of the bench rather than merely equivalent to any two cards.
+  if(pv.sameCol)c.atk+=1;
+  giveCard(ME,c);
+  fuseSel=[null,null];
+  SFX.play('card');
+  log('Forged '+c.name+'.');
+  showcase({...c},ME,'draw');
+  if(NET.on)pushState();
+  hud();renderHand();renderFuse();
+}
+function slotHTML(c){
+  if(!c)return '<span class="fs-empty">Empty</span>';
+  return '<div class="mini"><div class="mn">'+c.name+'</div>'+
+    '<div class="mt">'+(c.tag||'')+'</div>'+
+    '<div class="ms">'+(c.atk||0)+'\u2694 &middot; '+(c.curHp||0)+'\u2665</div></div>';
+}
+function renderFuse(){
+  const [a,b]=fuseSel;
+  $('fuseA').className='fuse-slot'+(a?' filled':'');
+  $('fuseB').className='fuse-slot'+(b?' filled':'');
+  $('fuseA').innerHTML=a?slotHTML(a):'<span class="fs-empty">Slot 1</span>';
+  $('fuseB').innerHTML=b?slotHTML(b):'<span class="fs-empty">Slot 2</span>';
+  const pv=fusePreview(a,b);
+  const R=$('fuseR');
+  if(pv){
+    R.className='fuse-slot result ready';
+    R.innerHTML='<div class="mini"><div class="mn">'+WB_BANDS[pv.band]+'</div>'+
+      '<div class="mt">'+(GEM_EPITHET[pv.col]||'')+'</div>'+
+      '<div class="ms">band '+pv.band+(pv.sameCol?' <b>+1</b>':'')+'</div></div>';
+  }else{
+    R.className='fuse-slot result';
+    R.innerHTML='<span class="fs-empty">Result</span>';
+  }
+  const note=$('fuseNote');
+  if(!a||!b){
+    note.className='fuse-note';
+    note.textContent='Pick two segment-forged cards below.';
+  }else if(pv.sameCol){
+    note.className='fuse-note ok';
+    note.textContent='Matched colour \u2014 the result gains an extra point of attack.';
+  }else{
+    note.className='fuse-note';
+    note.textContent='Mixed colours \u2014 the result takes the stronger card\'s colour.';
+  }
+  $('fuseGo').disabled=!pv;
+  $('fuseGo').style.opacity=pv?1:.45;
+
+  // the pick list
   const wrap=$('forgeRows');
   wrap.innerHTML='';
-  GEM_COLS.forEach(col=>{
-    const have=g[col]||0;
-    const row=document.createElement('div');
-    row.className='forge-row';
-    const terr=TERRAIN[COL_OF_GEM[col]]||{};
-    row.innerHTML='<div class="fr-head"><span class="fr-dot" style="background:'+
-      GEM_INFO[col].hex+'"></span>'+terr.name+' · '+GEM_INFO[col].role+
-      '<span class="fr-have">'+have+'</span></div>';
-    const btns=document.createElement('div');
-    btns.className='fr-btns';
-    FORGE_COST.forEach((price,band)=>{
-      const b=document.createElement('button');
-      b.className='fr-b'+(have>=price?'':' no');
-      b.innerHTML=WB_BANDS[band]+'<small>'+price+'◆</small>';
-      b.disabled=have<price;
-      b.onclick=()=>doForge(col,band);
-      btns.appendChild(b);
-    });
-    row.appendChild(btns);
-    wrap.appendChild(row);
+  const cands=fuseCandidates();
+  if(!cands.length){
+    wrap.innerHTML='<div class="fuse-empty">No segment-forged cards in hand yet. '+
+      'Spend '+SEGMENT_CARD_COST+' segments of one colour to forge one.</div>';
+    return;
+  }
+  cands.forEach(c=>{
+    const on=fuseSel.includes(c);
+    const d=document.createElement('button');
+    d.className='fp-card'+(on?' on':'');
+    d.innerHTML='<span class="fps">'+(c.atk||0)+'\u2694 '+(c.curHp||0)+'\u2665</span>'+
+      '<span class="fpn">'+c.name+'</span>'+
+      '<span class="fpn">'+(c.tag||'')+'</span>';
+    d.onclick=()=>{
+      if(on){fuseSel=fuseSel.map(x=>x===c?null:x);}
+      else if(!fuseSel[0])fuseSel[0]=c;
+      else if(!fuseSel[1])fuseSel[1]=c;
+      else fuseSel[1]=c;      // replace the second, keep the first pinned
+      renderFuse();
+    };
+    wrap.appendChild(d);
   });
-  // Craft moved here from the segments panel this session (asked to remove
-  // it from that grid — "just keep the 6" — since a badge sharing the exact
-  // grid six resource counts live in kept reading as a 7th gem type no
-  // matter how it was shaped or labelled there). Placed right before the
-  // elite row rather than with the five colour rows above: craft doesn't
-  // buy a card the way they do, it MINTS what the elite row spends — 5 of
-  // one colour each in, 1 purple out — so the reading order (five colours
-  // -> craft -> elite) matches the actual resource flow. Reuses .forge-row/
-  // .fr-* styling rather than inventing a one-off look for a single row.
-  const cr=document.createElement('div');
-  cr.className='forge-row craft';
-  cr.innerHTML='<div class="fr-head"><span class="fr-dot" style="background:'+
-    'linear-gradient(135deg,'+GEM_COLS.map(c=>GEM_INFO[c].hex).join(',')+')"></span>'+
-    'Craft — '+CRAFT_COST+' each of '+CRAFT_DISTINCT+' colours \u2192 1 purple</div>';
-  const crb=document.createElement('div');crb.className='fr-btns';
-  const cbtn=document.createElement('button');
-  cbtn.className='fr-b'+(canCraftGem(ME)?'':' no');
-  cbtn.innerHTML='Craft<small>\u25c6</small>';
-  cbtn.disabled=!canCraftGem(ME);
-  cbtn.onclick=doCraft;
-  crb.appendChild(cbtn);cr.appendChild(crb);wrap.appendChild(cr);
-  // elites last: they are the payoff row, and putting them first invites
-  // saving for them before the player understands the base ladder
-  const er=document.createElement('div');
-  er.className='forge-row elite';
-  er.innerHTML='<div class="fr-head"><span class="fr-dot" style="background:'+
-    GEM_INFO.purple.hex+'"></span>Elite · resonates alone'+
-    '<span class="fr-have">'+(g.purple||0)+'</span></div>';
-  const eb=document.createElement('div');eb.className='fr-btns';
-  const b=document.createElement('button');
-  b.className='fr-b'+(g.purple>=ELITE_COST?'':' no');
-  b.innerHTML='Elite<small>'+ELITE_COST+'◆</small>';
-  b.disabled=(g.purple||0)<ELITE_COST;
-  b.onclick=()=>doForge('purple',5);
-  eb.appendChild(b);er.appendChild(eb);wrap.appendChild(er);
-
-  // Trade row. This is the release valve for a board that never pays you the
-  // colour a recipe demands — without it a player can be permanently unable to
-  // build. Kept at the bottom because it is a fallback, not a strategy.
-  const tr=document.createElement('div');
-  tr.className='forge-row trade';
-  tr.innerHTML='<div class="fr-head"><span class="fr-dot" style="background:'+
-    'linear-gradient(135deg,'+GEM_COLS.map(c=>GEM_INFO[c].hex).join(',')+')"></span>'+
-    'Trade — '+TRADE_RATE+' of one colour for 1 of any</div>';
-  const grid=document.createElement('div');
-  grid.className='traderow';
-  GEM_COLS.forEach(from=>{
-    const cell=document.createElement('div');
-    cell.className='tradecell'+(g[from]>=TRADE_RATE?'':' no');
-    cell.innerHTML='<span class="cpip" style="background:'+GEM_INFO[from].hex+'">'+
-      g[from]+'</span><span class="tarrow">\u2192</span>';
-    const outs=document.createElement('div');
-    outs.className='tradeouts';
-    GEM_COLS.filter(c=>c!==from).forEach(to=>{
-      const btn=document.createElement('button');
-      btn.className='tradeb';
-      btn.style.background=GEM_INFO[to].hex;
-      btn.title=TRADE_RATE+' '+from+' \u2192 1 '+to;
-      btn.disabled=!canTrade(ME,from,to);
-      btn.onclick=()=>doTrade(from,to);
-      outs.appendChild(btn);
-    });
-    cell.appendChild(outs);
-    grid.appendChild(cell);
-  });
-  tr.appendChild(grid);
-  wrap.appendChild(tr);
 }
 function doTrade(from,to){
   if(G.phase!=='build'||G.turn!==ME)return;
@@ -11114,12 +11341,16 @@ function doForge(col,band){
   log('Forged '+card.name+'.');
   showcase({...card},ME,'draw');
   if(NET.on)pushState();
-  hud();renderHand();renderForge();
+  hud();renderHand();
+  // only repaint the bench if it happens to be open — forging is now done
+  // from the gem strip, not from inside the panel
+  if(!$('forge').classList.contains('hide'))renderFuse();
 }
 $('forgeBtn').onclick=openForge;
 $('forgeClose').onclick=closeForge;
+$('fuseGo').onclick=doFuse;
 $('forgeBackdrop').onclick=closeForge;
-$('buyBtnPanel').onclick=buyMystery;
+$('buyBtnPanel').onclick=buyCard;
 $('road').onclick=()=>{
   if(G.phase!=='build'||G.turn!==ME)return;
   G.roadMode=!G.roadMode;G.cityMode=false;
@@ -11576,9 +11807,12 @@ function openCosts(){
       (ep!=null?'<span class="cor">or</span><span class="cpip en">'+ep+'\u26a1</span>':'')+
       '</span></div>';
   }).join('');
-  const forgeRows=FORGE_COST.map((n,b)=>
-    '<div class="costrow"><span class="cname">'+WB_BANDS[b]+' card</span>'+
-    '<span class="cpips"><span class="cpip any">'+n+'</span></span></div>').join('')+
+  // The per-band ladder is gone (flat price, random band — see forgeCard),
+  // so this is now two rows rather than one per band: the flat colour price
+  // and the purple elite price.
+  const forgeRows=
+    '<div class="costrow"><span class="cname">Random unit card</span>'+
+    '<span class="cpips"><span class="cpip any">'+SEGMENT_CARD_COST+'</span></span></div>'+
     '<div class="costrow"><span class="cname">Elite card</span><span class="cpips">'+
     '<span class="cpip" style="background:'+GEM_INFO.purple.hex+'">'+ELITE_COST+
     '</span></span></div>';
@@ -11593,15 +11827,21 @@ function openCosts(){
       'Where a row shows <b>or N\u26a1</b>, you can always build it with energy '+
       'instead — the energy price climbs with each one you already own, so '+
       'segments stay the cheaper route.</div>'+
-    '<div class="costhead">Forge — any one colour</div>'+forgeRows+
+    '<div class="costhead">Cards</div>'+
+    '<div class="costnote"><b>Card</b> button: <b>2\u26a1</b> for one random card — '+
+      'usually a unit, sometimes a Mystery. <b>Segments</b>: <b>'+SEGMENT_CARD_COST+
+      '</b> of one colour for one random unit of that colour. <b>Forge</b>: '+
+      'combine two segment-forged cards into one a band higher — matching '+
+      'colours add an extra point of attack.</div>'+
+    '<div class="costhead">Segment prices</div>'+forgeRows+
     '<div class="costhead">Where colours come from</div>'+terr+
     '<div class="costnote">Purple comes from a <b>Supply Yard</b> tile, or craft '+
       'it from <b>'+CRAFT_COST+'</b> each of <b>'+CRAFT_DISTINCT+
       '</b> different colours.</div>'+
     '<div class="costhead">Settlements</div>'+
-    '<div class="costnote">Your free card each turn is capped by how many '+
-      'settlements you hold — <b>'+G.players[ME].villages.length+'</b> now, so the best '+
-      'you can be given is <b>'+WB_BANDS[roundGrantBand(99,G.players[ME].villages.length)]+
+    '<div class="costnote">Settlements cap how good a forged card can roll — '+
+      '<b>'+G.players[ME].villages.length+'</b> now, so the best you can roll is '+
+      '<b>'+WB_BANDS[Math.min(WB_BANDS.length-1,Math.max(1,G.players[ME].villages.length))]+
       '</b>. Expand to raise it.</div>'+
     '<div class="costhead">Trade</div>'+
     '<div class="costnote">Stuck without a colour? Trade <b>'+TRADE_RATE+
