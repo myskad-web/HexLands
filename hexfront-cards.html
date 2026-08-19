@@ -1576,6 +1576,15 @@ body.land .gempanel{
   position:absolute;left:auto;right:0;
   top:calc(38px + var(--insetT,env(safe-area-inset-top)));
   width:auto;max-width:none;
+  /* The action buttons (.endbtn and friends) carry z-index:10 and this
+     panel carried none, so wherever the gem column reached far enough down
+     to meet the Forge button, the BUTTON won the hit test — the purple gem
+     is last in the column, so it was the one that became untappable.
+     Reported directly: "impossible to click on the purple gem, the touch
+     area clicks on the forge button". Above the buttons now; they don't
+     overlap visually, this only decides who receives the tap where the
+     boxes happen to meet. */
+  z-index:12;
   background:linear-gradient(180deg,rgba(30,18,8,.75),rgba(14,8,3,.82));
   border:1px solid rgba(224,179,72,.28);
   border-right:none;border-radius:8px 0 0 8px;
@@ -2911,58 +2920,84 @@ body.land .as-tally{font-size:12.5px}
 }
 .as-chip .x{opacity:.7;margin-left:5px}
 
-/* ---- forge / fusion bench ---- */
-.forge-box{max-width:min(94vw,560px)}
-.fuse-bench{
-  display:flex;align-items:center;justify-content:center;gap:6px;
-  margin:10px 0 6px;
+/* ---- forge / fusion bench (popup, not a menu screen) ---- */
+#forge.forge-pop{position:fixed;inset:0;z-index:64;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;
+  pointer-events:none}
+#forge.forge-pop.hide{display:none}
+.forge-veil{
+  position:absolute;inset:0;pointer-events:auto;
+  /* board stays readable underneath — dimmed, not blacked out */
+  background:radial-gradient(120% 90% at 50% 45%,
+    rgba(8,5,3,.62) 0%,rgba(8,5,3,.86) 70%,rgba(8,5,3,.92) 100%);
 }
+.forge-stage{
+  position:relative;pointer-events:auto;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:4px 10px;max-width:min(96vw,600px);
+}
+.fuse-bench{display:flex;align-items:center;justify-content:center;gap:8px}
 .fuse-slot{
-  flex:0 0 auto;width:84px;height:112px;border-radius:10px;
-  border:1.5px dashed rgba(232,215,176,.32);background:rgba(20,16,12,.6);
+  flex:0 0 auto;width:88px;height:118px;border-radius:12px;
+  border:1.5px dashed rgba(232,215,176,.3);background:rgba(16,12,8,.82);
   display:flex;align-items:center;justify-content:center;overflow:hidden;
-  position:relative;cursor:pointer;
+  position:relative;cursor:pointer;transition:box-shadow .18s,border-color .18s;
 }
-.fuse-slot.filled{border-style:solid;border-color:var(--gold-hot)}
-.fuse-slot.result{border-color:rgba(224,179,72,.55);cursor:default}
+.fuse-slot.filled{border-style:solid}
+/* a filled slot takes its own gem's colour, so a matched pair is obvious
+   before you read a word — asked for directly */
+.fuse-slot.filled[data-gem]{box-shadow:0 0 16px var(--gemGlow,rgba(255,215,106,.5))}
+.fuse-slot.result{border-color:rgba(224,179,72,.4);cursor:default}
 .fuse-slot.result.ready{
   border-style:solid;border-color:#ffd76a;
-  box-shadow:0 0 14px rgba(255,200,90,.45);
+  box-shadow:0 0 20px rgba(255,200,90,.55);
+}
+.fuse-slot.result.rare{
+  border-color:#d9a2ff;box-shadow:0 0 26px rgba(190,120,255,.65);
 }
 .fs-empty{font-size:10.5px;font-weight:700;letter-spacing:.08em;
-  text-transform:uppercase;color:rgba(232,215,176,.4)}
-.fuse-slot .mini{width:100%;padding:5px 5px 6px;text-align:center}
+  text-transform:uppercase;color:rgba(232,215,176,.38);padding:0 6px;
+  text-align:center;line-height:1.35}
+.fuse-slot .mini{width:100%;padding:6px 5px;text-align:center}
 .fuse-slot .mini .mn{font-size:10.5px;font-weight:800;color:#f0e0b8;
   line-height:1.2;margin-bottom:3px}
-.fuse-slot .mini .mt{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+.fuse-slot .mini .mt{font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;
   color:rgba(232,215,176,.55);margin-bottom:5px}
-.fuse-slot .mini .ms{font-size:12px;font-weight:800;color:#e8d7b0}
-.fuse-slot .mini .ms b{color:#ff9a8a}
-.fuse-arrow{font-size:17px;font-weight:800;color:rgba(232,215,176,.5)}
-.fuse-note{font-size:12px;font-weight:700;text-align:center;min-height:16px;
-  color:rgba(232,215,176,.75)}
+.fuse-slot .mini .ms{font-size:13px;font-weight:800;color:#e8d7b0}
+.fuse-slot .mini .mb{font-size:9px;font-weight:800;color:#ffd76a;margin-top:4px}
+.fuse-arrow{font-size:19px;font-weight:800;color:rgba(232,215,176,.45)}
+.fuse-note{font-size:12px;font-weight:700;text-align:center;min-height:15px;
+  color:rgba(232,215,176,.7);text-shadow:0 1px 3px rgba(0,0,0,.9)}
 .fuse-note.ok{color:#7fd18a}
-.fuse-note.no{color:#e08a7a}
-.fuse-pick-label{
-  font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;
-  color:rgba(224,179,72,.6);margin:8px 0 5px;text-align:center;
+.fuse-acts{display:flex;align-items:center;gap:10px}
+.fuse-acts .go{padding:9px 26px;font-size:13px}
+.fuse-x{
+  width:32px;height:32px;padding:0;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+  border:1px solid rgba(232,215,176,.3);background:rgba(20,16,12,.9);
+  color:rgba(232,215,176,.85);
 }
 .fuse-pick{
-  display:flex;flex-wrap:wrap;gap:5px;justify-content:center;
-  max-height:26vh;overflow-y:auto;scrollbar-width:none;
+  display:flex;gap:6px;justify-content:flex-start;
+  max-width:min(96vw,600px);overflow-x:auto;overflow-y:hidden;
+  padding:4px 2px 6px;scrollbar-width:none;
 }
 .fuse-pick::-webkit-scrollbar{display:none}
 .fp-card{
-  flex:0 0 auto;min-width:76px;padding:6px 7px;border-radius:9px;
-  border:1px solid rgba(232,215,176,.22);background:rgba(20,16,12,.75);
-  font-size:11px;font-weight:700;color:rgba(232,215,176,.92);
-  text-align:left;line-height:1.3;cursor:pointer;
+  flex:0 0 auto;width:70px;padding:6px;border-radius:10px;
+  border:1.5px solid rgba(232,215,176,.2);background:rgba(18,13,8,.9);
+  font-weight:700;color:rgba(232,215,176,.92);
+  text-align:center;line-height:1.25;cursor:pointer;
+  transition:transform .14s,box-shadow .18s,border-color .18s;
 }
-.fp-card.on{border-color:var(--gold-hot);background:rgba(120,88,32,.5)}
-.fp-card.dim{opacity:.35;cursor:default}
-.fp-card .fpn{display:block;font-size:10.5px}
-.fp-card .fps{display:block;color:var(--gold-hot)}
-.fuse-empty{font-size:11.5px;color:rgba(232,215,176,.5);text-align:center;padding:10px}
+/* every pickable card glows in ITS OWN gem colour, so which cards will
+   match is readable at a glance without any explanatory text */
+.fp-card[data-gem]{box-shadow:0 0 10px var(--gemGlow,transparent)}
+.fp-card.on{transform:translateY(-4px)}
+.fp-card.on[data-gem]{box-shadow:0 0 18px var(--gemGlow,rgba(255,215,106,.7))}
+.fp-card .fpn{display:block;font-size:9.5px;opacity:.9}
+.fp-card .fps{display:block;font-size:12px;color:#f0e0b8;margin-bottom:2px}
+.fuse-empty{font-size:11.5px;color:rgba(232,215,176,.55);text-align:center;padding:12px}
 
 
 /* the whole stage lights up as a drop target while a card is being dragged */
@@ -3611,26 +3646,25 @@ body.land .as-tally{font-size:12.5px}
     </div>
   </div>
 </div>
-<div class="ovl hide" id="forge">
-  <div class="ovl-backdrop" id="forgeBackdrop"></div>
-  <div class="ovl-box forge-box">
-    <div class="ovl-step">The forge</div>
-    <div class="ovl-title">Combine cards into stronger units</div>
-    <div class="ovl-body" id="forgeBody"></div>
+<!-- The forge is a POPUP, not a menu screen: the board stays visible (just
+     dimmed) behind it, and the card fan below stays reachable so you pick
+     straight from your own hand. No explanatory paragraph — two slots, an
+     equals sign and a result read as what they are. -->
+<div class="forge-pop hide" id="forge">
+  <div class="forge-veil" id="forgeBackdrop"></div>
+  <div class="forge-stage">
     <div class="fuse-bench">
-      <div class="fuse-slot" id="fuseA" data-slot="0"><span class="fs-empty">Slot 1</span></div>
+      <div class="fuse-slot" id="fuseA" data-slot="0"><span class="fs-empty">Tap a card</span></div>
       <div class="fuse-arrow">+</div>
-      <div class="fuse-slot" id="fuseB" data-slot="1"><span class="fs-empty">Slot 2</span></div>
+      <div class="fuse-slot" id="fuseB" data-slot="1"><span class="fs-empty">Tap a card</span></div>
       <div class="fuse-arrow">=</div>
-      <div class="fuse-slot result" id="fuseR"><span class="fs-empty">Result</span></div>
+      <div class="fuse-slot result" id="fuseR"><span class="fs-empty">?</span></div>
     </div>
     <div class="fuse-note" id="fuseNote"></div>
-    <div class="ovl-actions">
+    <div class="fuse-acts">
       <button id="fuseGo" class="go" disabled>Forge</button>
-      <span class="spacer"></span>
-      <button id="forgeClose">Done</button>
+      <button id="forgeClose" class="fuse-x">✕</button>
     </div>
-    <div class="fuse-pick-label">Your segment-forged cards</div>
     <div id="forgeRows" class="fuse-pick"></div>
   </div>
 </div>
@@ -3740,7 +3774,7 @@ body.land .as-tally{font-size:12.5px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.10.5';
+const VERSION='0.10.6';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -7483,7 +7517,11 @@ function forgeCard(pi,col,band){
   if(g[col]<SEGMENT_CARD_COST)return null;
   g[col]-=SEGMENT_CARD_COST;
   const rolled=rollForgeBand(pi);
-  const c=mkForgeUnit(rolled,col,pi);
+  // `true` = the weaker build. Segment cards are deliberately raw material
+  // now, not finished units: the forge is where they become strong. Without
+  // this gap, fusing two good cards into one slightly better card is a bad
+  // trade and nobody would ever use the bench.
+  const c=mkForgeUnit(rolled,col,pi,true);
   c.forged=true;              // marks it as fusable at the bench
   giveCard(pi,c);
   return c;
@@ -8743,7 +8781,7 @@ function startTurn(pi){
     if(plating)bits.push('+'+plating+'\u26e8');
     log('Outposts: '+bits.join(', ')+'.');
   }
-  G.built=false;G.rolled=false;G.roadMode=false;G.cityMode=false;G.boughtMystery=false;
+  G.built=false;G.rolled=false;G.roadMode=false;G.cityMode=false;G.boughtMystery=0;
   G.unitsThisTurn=0;G.cmdUsed[pi]=false;G.costCut=0;
   G.phase='roll';
   if(NET.on&&pi!==ME){
@@ -9376,7 +9414,11 @@ function aiForge(){
       const hi=(b.tier>a.tier)?b:a;
       const nc=mkForgeUnit(band,hi.gem||a.gem||GEM_COLS[0],pi);
       nc.forged=true;
-      if(a.gem&&b.gem&&a.gem===b.gem)nc.atk+=1;
+      if(a.gem&&b.gem&&a.gem===b.gem)nc.atk+=2;
+      // same boon roll the human's bench gives — an AI fusing for a plain
+      // stat bump while the player gets abilities would fall behind on
+      // exactly the axis this feature added
+      applyBoon(nc,rollBoon(band));
       giveCard(pi,nc);
       dbg('ai','fuse: '+a.name+' + '+b.name+' -> '+nc.name);
       acted++;
@@ -9525,8 +9567,8 @@ function aiTurn(){
             const how=payAny(FOE,'road');
             if(how)log('Opponent builds a bridge'+(how==='energy'?' with energy.':'.'));
           }
-        }else if(!G.boughtMystery&&p.energy>=2&&(AI_LEVEL==='hard'?p.hand.length<4:Math.random()<0.5)){
-          p.energy-=2;giveCard(1,mkMystery());G.boughtMystery=true;log('Opponent buys a mystery card.');
+        }else if((G.boughtMystery|0)<BUY_LIMIT&&p.energy>=2&&(AI_LEVEL==='hard'?p.hand.length<4:Math.random()<0.5)){
+          p.energy-=2;giveCard(1,mkMystery());G.boughtMystery=(G.boughtMystery|0)+1;log('Opponent buys a card.');
         }
       }
       hud();
@@ -10336,8 +10378,15 @@ function hud(){
   setRoadBtn();
   setCmdBtn();
   // buy button sits on the main screen, directly above End turn
-  const canBuy=G.phase==='build'&&G.turn===ME&&G.players[ME].energy>=2&&!G.boughtMystery;
-  [$('buyBtn'),$('buyBtnPanel')].forEach(b=>{if(b)b.disabled=!canBuy;});
+  const canBuy=G.phase==='build'&&G.turn===ME&&G.players[ME].energy>=2&&(G.boughtMystery|0)<BUY_LIMIT;
+  // The label carries the count — two buys a turn now, and without a visible
+  // tally there's no way to know whether you've used one.
+  const bought=G.boughtMystery|0;
+  [$('buyBtn'),$('buyBtnPanel')].forEach(b=>{
+    if(!b)return;
+    b.disabled=!canBuy;
+    b.textContent='Card 2\u26a1  '+bought+'/'+BUY_LIMIT;
+  });
   // Forge is live whenever ANY colour can afford its cheapest band, or an
   // elite is affordable. It pulses only when something is actually buyable,
   // so the button is a signal rather than furniture.
@@ -11028,14 +11077,18 @@ $('cmd').onclick=()=>{
 // two you'll get is the point — it's the cheap, unreliable source, against
 // segments (pricier, unit-only) and the fusion bench (best, but needs
 // material you already own).
-const BUY_UNIT_CHANCE=0.62;
+// Two buys a turn now (was one), shown as a 0/2 counter on the button.
+const BUY_LIMIT=2;
+// Mystery made rarer — asked for directly. Most buys should be a unit;
+// a Mystery is the occasional surprise, not a coin flip.
+const BUY_UNIT_CHANCE=0.80;
 function buyCard(){
   if(G.phase!=='build'||G.turn!==ME)return;
   // One per turn, same shape as the existing one-village-per-turn rule
   // (G.built, right above). Energy alone didn't limit this — at higher
   // maxEnergy a single turn could afford several, turning the pile
   // into a bigger lever than forging or building ever were.
-  if(G.boughtMystery)return;
+  if((G.boughtMystery|0)>=BUY_LIMIT)return;
   const p=G.players[ME];
   if(p.energy<2)return;
   let card;
@@ -11047,7 +11100,7 @@ function buyCard(){
   }else{
     card=mkMystery();
   }
-  p.energy-=2;giveCard(ME,card);G.boughtMystery=true;
+  p.energy-=2;giveCard(ME,card);G.boughtMystery=(G.boughtMystery|0)+1;
   // show what you actually bought before it disappears into the pile — the
   // same 'draw' reveal a rolled card gets, so it flies to the hand stack
   showcase({...card},ME,'draw');
@@ -11211,11 +11264,9 @@ function closeForge(){
   fuseSel=[null,null];
 }
 function renderForge(){
-  const g=gemsOf(ME);
-  $('forgeBody').innerHTML=
-    'Combine <b>two segment-forged cards</b> into one stronger unit. '+
-    'Same colour fuses cleanest; mixing colours still works, but the result '+
-    'takes the stronger card\'s colour.';
+  // No explanatory paragraph any more — two slots, a plus, an equals and a
+  // result say what this is. The only text left is the one line that
+  // changes with your selection (see renderFuse's note).
   renderFuse();
 }
 // ---- the fusion bench ----
@@ -11223,6 +11274,49 @@ function renderForge(){
 // decision lives now that buying a card is a flat random roll: you can't
 // choose what you roll, but you choose what you COMBINE.
 let fuseSel=[null,null];
+// ---- forge boons ----
+// Fusion has to be worth losing two cards for, so the result doesn't just
+// gain a band — it gains an ABILITY, drawn from the effect vocabulary the
+// game already resolves in combat (venom/sap/pierce/burn/drain/cleave all
+// have working handlers; nothing here is a new mechanic bolted on).
+//
+// Weighted, with genuinely rare top entries: the point of a random boon is
+// that a forge can occasionally produce something you'd never have built on
+// purpose. `min` gates a boon behind a result band so Recruit-tier fusions
+// can't roll the big ones.
+const FORGE_BOONS=[
+  {w:20,min:0,key:'pierce',n:1,label:'Piercing'},
+  {w:18,min:0,key:'burn',  n:2,label:'Searing'},
+  {w:16,min:0,key:'venom', n:2,label:'Venomous'},
+  {w:14,min:1,key:'rally', n:1,label:'Rallying'},
+  {w:12,min:1,key:'sap',   n:1,label:'Draining'},
+  {w:10,min:2,key:'drain', n:1,label:'Vampiric'},
+  {w:8, min:2,key:'cleave',n:2,label:'Shattering'},
+  {w:5, min:3,key:'siege', n:3,label:'Siegebreaker'},
+  // rare: the ones worth chasing
+  {w:3, min:3,key:'burn',  n:5,label:'Infernal',  rare:true},
+  {w:2, min:4,key:'venom', n:5,label:'Plaguebearer',rare:true},
+  {w:1, min:4,key:'drain', n:2,label:'Soulbound', rare:true},
+];
+function rollBoon(band){
+  const pool=FORGE_BOONS.filter(b=>band>=b.min);
+  if(!pool.length)return null;
+  let total=0;pool.forEach(b=>total+=b.w);
+  let r=Math.random()*total;
+  for(const b of pool){ r-=b.w; if(r<0)return b; }
+  return pool[0];
+}
+// Applies a boon to a freshly fused card, stacking with whatever the base
+// unit already had rather than overwriting it.
+function applyBoon(c,boon){
+  if(!c||!boon)return c;
+  c[boon.key]=(c[boon.key]||0)+boon.n;
+  c.boon=boon.label;
+  c.boonRare=!!boon.rare;
+  c.name=boon.label+' '+c.name;
+  c.desc=wbDesc(c);
+  return c;
+}
 // Only cards that came from segments can be fused. Bought cards (2 energy)
 // and scarred survivors are deliberately excluded — otherwise the cheap
 // random buy would feed the best card source in the game, and the fusion
@@ -11242,17 +11336,39 @@ function fusePreview(a,b){
 }
 function doFuse(){
   const [a,b]=fuseSel;
-  if(!fusable(a)||!fusable(b)||a===b)return;
+  const p=G.players[ME];
+  // THE "FORGE ATE MY CARD" BUG: fuseSel holds direct card references, and
+  // a selected card can leave the hand before Forge is pressed — played
+  // from the fan, discarded on a seven, or consumed by an earlier fuse.
+  // `fusable()` only checked the card's own fields (kind/forged/spent),
+  // which a card that's no longer in your hand still passes, so the fuse
+  // went ahead: it filtered out the one input that WAS still there,
+  // consumed it, and built a result from a phantom partner. From the
+  // player's side that reads exactly as "it just ate a card".
+  // Verify both inputs are genuinely still in hand before touching anything.
+  const inHand=c=>p.hand.indexOf(c)>=0;
+  if(!fusable(a)||!fusable(b)||a===b||!inHand(a)||!inHand(b)){
+    // drop the stale selection so the bench can't keep offering it
+    fuseSel=[fuseSel[0]&&inHand(fuseSel[0])?fuseSel[0]:null,
+             fuseSel[1]&&inHand(fuseSel[1])?fuseSel[1]:null];
+    renderFuse();
+    toast('Those cards are no longer in your hand',1600);
+    return;
+  }
   const pv=fusePreview(a,b);
   if(!pv)return;
-  const p=G.players[ME];
   p.hand=p.hand.filter(c=>c!==a&&c!==b);
+  // Fused cards are built at FULL strength (no `weak` flag), unlike the
+  // cards segments buy — that gap is what makes fusing worth two cards.
   const c=mkForgeUnit(pv.band,pv.col,ME);
   c.forged=true;                  // a fused card can be fused again
-  // Same-colour fusion is the clean line and gets a small edge, so the
+  // Same-colour fusion is the clean line and gets a bigger edge, so the
   // "combine two reds" case the design asked for is genuinely the best use
   // of the bench rather than merely equivalent to any two cards.
-  if(pv.sameCol)c.atk+=1;
+  if(pv.sameCol)c.atk+=2;
+  // ...and it gains an ability. This is the real payoff: a band and some
+  // attack could be got by waiting, but an effect can only come from here.
+  applyBoon(c,rollBoon(pv.band));
   giveCard(ME,c);
   fuseSel=[null,null];
   SFX.play('card');
@@ -11265,55 +11381,80 @@ function slotHTML(c){
   if(!c)return '<span class="fs-empty">Empty</span>';
   return '<div class="mini"><div class="mn">'+c.name+'</div>'+
     '<div class="mt">'+(c.tag||'')+'</div>'+
-    '<div class="ms">'+(c.atk||0)+'\u2694 &middot; '+(c.curHp||0)+'\u2665</div></div>';
+    '<div class="ms">'+(c.atk||0)+'\u2694 &middot; '+(c.curHp||0)+'\u2665</div>'+
+    (c.boon?'<div class="mb">'+c.boon+'</div>':'')+'</div>';
+}
+// A card's own gem colour, used to glow both the slot it sits in and its
+// chip in the picker — matching pairs then read as matching without a
+// sentence explaining that they do.
+function gemGlow(c){
+  const info=c&&c.gem&&GEM_INFO[c.gem];
+  return info?info.hex:null;
+}
+function paintGem(el,c){
+  const hex=gemGlow(c);
+  if(hex){el.dataset.gem=c.gem;el.style.setProperty('--gemGlow',hex);}
+  else{delete el.dataset.gem;el.style.removeProperty('--gemGlow');}
 }
 function renderFuse(){
+  // prune anything that has left the hand since it was picked — the bench
+  // stays open across plays and discards, so a selection can go stale at
+  // any moment (see doFuse for what that used to cost)
+  const hand=G.players[ME].hand||[];
+  fuseSel=fuseSel.map(c=>(c&&hand.indexOf(c)>=0)?c:null);
   const [a,b]=fuseSel;
-  $('fuseA').className='fuse-slot'+(a?' filled':'');
-  $('fuseB').className='fuse-slot'+(b?' filled':'');
-  $('fuseA').innerHTML=a?slotHTML(a):'<span class="fs-empty">Slot 1</span>';
-  $('fuseB').innerHTML=b?slotHTML(b):'<span class="fs-empty">Slot 2</span>';
+  const SA=$('fuseA'), SB=$('fuseB');
+  SA.className='fuse-slot'+(a?' filled':'');
+  SB.className='fuse-slot'+(b?' filled':'');
+  SA.innerHTML=a?slotHTML(a):'<span class="fs-empty">Tap a card</span>';
+  SB.innerHTML=b?slotHTML(b):'<span class="fs-empty">Tap a card</span>';
+  paintGem(SA,a); paintGem(SB,b);
+  // tapping a filled slot clears it
+  SA.onclick=()=>{if(fuseSel[0]){fuseSel[0]=null;renderFuse();}};
+  SB.onclick=()=>{if(fuseSel[1]){fuseSel[1]=null;renderFuse();}};
+
   const pv=fusePreview(a,b);
   const R=$('fuseR');
   if(pv){
     R.className='fuse-slot result ready';
     R.innerHTML='<div class="mini"><div class="mn">'+WB_BANDS[pv.band]+'</div>'+
       '<div class="mt">'+(GEM_EPITHET[pv.col]||'')+'</div>'+
-      '<div class="ms">band '+pv.band+(pv.sameCol?' <b>+1</b>':'')+'</div></div>';
+      '<div class="ms">'+(pv.sameCol?'+2\u2694':'\u2694')+'</div>'+
+      '<div class="mb">+ ability</div></div>';
+    R.style.setProperty('--gemGlow',(GEM_INFO[pv.col]||{}).hex||'#ffd76a');
+    R.dataset.gem=pv.col;
   }else{
     R.className='fuse-slot result';
-    R.innerHTML='<span class="fs-empty">Result</span>';
+    R.innerHTML='<span class="fs-empty">?</span>';
+    R.removeAttribute('data-gem');
   }
   const note=$('fuseNote');
-  if(!a||!b){
-    note.className='fuse-note';
-    note.textContent='Pick two segment-forged cards below.';
-  }else if(pv.sameCol){
+  if(!a||!b){ note.className='fuse-note'; note.textContent=''; }
+  else if(pv.sameCol){
     note.className='fuse-note ok';
-    note.textContent='Matched colour \u2014 the result gains an extra point of attack.';
+    note.textContent='Matched colour \u2014 +2 attack';
   }else{
-    note.className='fuse-note';
-    note.textContent='Mixed colours \u2014 the result takes the stronger card\'s colour.';
+    note.className='fuse-note'; note.textContent='Mixed colour';
   }
   $('fuseGo').disabled=!pv;
   $('fuseGo').style.opacity=pv?1:.45;
 
-  // the pick list
+  // the picker: only cards that can actually be forged, each glowing in its
+  // own gem colour
   const wrap=$('forgeRows');
   wrap.innerHTML='';
   const cands=fuseCandidates();
   if(!cands.length){
-    wrap.innerHTML='<div class="fuse-empty">No segment-forged cards in hand yet. '+
-      'Spend '+SEGMENT_CARD_COST+' segments of one colour to forge one.</div>';
+    wrap.innerHTML='<div class="fuse-empty">Nothing to forge yet \u2014 buy cards with gem segments.</div>';
     return;
   }
   cands.forEach(c=>{
     const on=fuseSel.includes(c);
     const d=document.createElement('button');
     d.className='fp-card'+(on?' on':'');
-    d.innerHTML='<span class="fps">'+(c.atk||0)+'\u2694 '+(c.curHp||0)+'\u2665</span>'+
-      '<span class="fpn">'+c.name+'</span>'+
-      '<span class="fpn">'+(c.tag||'')+'</span>';
+    d.innerHTML='<span class="fps">'+(c.atk||0)+'\u2694</span>'+
+      '<span class="fpn">'+c.name+'</span>';
+    paintGem(d,c);
     d.onclick=()=>{
       if(on){fuseSel=fuseSel.map(x=>x===c?null:x);}
       else if(!fuseSel[0])fuseSel[0]=c;
@@ -11981,7 +12122,7 @@ function applySnapshot(st){
   // seat-literal bugs, but in shadow state rather than seat indices.
   G.turnCols=st.turnCols||[[],[]];
   G.lastSum=st.lastSum;G.pendingSum=st.pendingSum;
-  G.rolled=st.rolled;G.built=st.built;G.boughtMystery=st.boughtMystery||false;
+  G.rolled=st.rolled;G.built=st.built;G.boughtMystery=st.boughtMystery||0;
   G.draftOrder=st.draftOrder;G.draftStep=st.draftStep;
   cardId=Math.max(cardId,st.cardId||1);
   // wipe board ownership, then rebuild it from the wire
@@ -12471,7 +12612,7 @@ function resetForNewGame(){
   // without this a rematch skips the opening hand entirely — the flag would
   // still be true from the previous game
   G.dealtOpening=false;
-  G.built=false;G.rolled=false;G.roadMode=false;G.cityMode=false;G.boughtMystery=false;
+  G.built=false;G.rolled=false;G.roadMode=false;G.cityMode=false;G.boughtMystery=0;
   G.freshCards.clear();
   G.overflowQueue=[[],[]];
   // Segments are per-game, not per-account. A purse carried over would let a
