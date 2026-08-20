@@ -757,6 +757,9 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
 /* already dragged onto the attacker — pulled slightly down and dimmed,
    distinct from 'spent' so it reads as "in play" rather than "unusable" */
 .card.committed{filter:brightness(.6);opacity:.5;transform:translateY(10px)!important}
+/* a card the forge can actually use — glows in its own gem colour so the
+   pickable set reads at a glance in the fan */
+.card.fusable{box-shadow:0 0 14px rgba(255,215,106,.75),0 3px 8px rgba(0,0,0,.55)!important}
 /* an unaffordable card's price turns cold so the reason is legible at a glance */
 .card.spent .cgem{
   background:linear-gradient(#8e8578,#5a534a 45%,#2f2b26);
@@ -1793,9 +1796,16 @@ body.land .handpanel-sheet{
    territory and undo the non-overlap split computed in layout(). */
 body.land .handpanel.defending .handpanel-sheet,
 .handpanel.defending .handpanel-sheet{
-  bottom:calc(var(--defendLift,88px) + var(--insetB,env(safe-area-inset-bottom)));
-  max-height:calc(var(--handPanelMax,60vh) - var(--defendLift,88px) + 6px);
+  bottom:calc(var(--defendLift,52px) + var(--insetB,env(safe-area-inset-bottom)));
+  max-height:calc(var(--handPanelMax,60vh) - var(--defendLift,52px) + 6px);
 }
+/* Lifting the whole sheet kept not being enough, because the head row —
+   which carries Take-the-hit — renders BELOW the fan, so it inherits the
+   full height of the cards before it. Reordering is the actual fix: put the
+   button ABOVE the fan while defending and it clears the cards entirely,
+   at any lift. The lift then only needs to keep it off the screen edge. */
+.handpanel.defending .handpanel-sheet{display:flex;flex-direction:column}
+.handpanel.defending .handpanel-head{order:-1;margin-bottom:6px}
 /* Cards are also sized for a full-height portrait screen (96x152) with no
    landscape-specific reduction — on a ~390px-tall phone that alone was
    enough to push the fan's top edge into the board's upper half even
@@ -2939,6 +2949,11 @@ body.land .as-tally{font-size:12.5px}
    bench sits in the TOP portion rather than dead centre — same split
    reasoning as the attacker stage, which shares this screen the same way. */
 .forge-pop .forge-stage{margin-top:calc(4px + var(--insetT,env(safe-area-inset-top)))}
+/* The hand panel has to sit ABOVE the forge's dimming veil, or the fan you
+   are supposed to be picking from is dimmed along with the board. Everything
+   else stays dimmed — that was the point of the veil. */
+.handpanel.forging{z-index:66}
+.handpanel.forging .handpanel-backdrop{background:transparent}
 body.land .forge-pop .forge-stage{margin-top:2px;padding:8px 12px;gap:6px}
 body.land .forge-pop .fuse-slot{width:74px;height:98px}
 body.land .forge-pop .fp-card{width:62px}
@@ -3801,7 +3816,7 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.10.7';
+const VERSION='0.10.8';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -10532,7 +10547,14 @@ function renderHand(){
       if(willAmplify)combo=' combo combo-amp';
       else if(willResonate)combo=' combo';
     }
-    d.className='card '+c.kind+(afford?' playable':' spent')+
+    // In forge mode the fan re-reads entirely: fusable cards are the live
+    // ones and everything else dims, so "which of these can I combine" is
+    // answered by looking rather than by tapping and being told no.
+    const forging=!$('forge').classList.contains('hide');
+    const canFuse=forging&&fusable(c);
+    d.className='card '+c.kind+
+      (forging?(canFuse?' playable fusable':' spent'):(afford?' playable':' spent'))+
+      (forging&&fuseSel.includes(c)?' committed':'')+
       (defending&&blockSel.includes(c)?' committed':'')+
       (forge&&c.kind==='unit'?' forged':'')+(c.taunt?' tankcard':'')+
       (c.kind==='unit'&&c.arch?' a-'+c.arch:'')+combo;
@@ -10561,6 +10583,24 @@ function renderHand(){
       // stage rather than the play zone, and returns before the ordinary
       // turn guard below (which would reject it, since G.turn is the
       // attacker's seat).
+      // FORGE MODE: while the bench is open, a tap on a fusable card in the
+      // fan puts it straight into a slot. The bench's own picker row still
+      // works, but picking from the fan is what the design asked for —
+      // the fan is where your cards live, so that's where you should be
+      // able to grab them from.
+      if(!$('forge').classList.contains('hide')){
+        ev.preventDefault();
+        if(!fusable(c)){
+          toast('Only segment-forged cards can be combined',1600);
+          return;
+        }
+        if(fuseSel.includes(c))fuseSel=fuseSel.map(x=>x===c?null:x);
+        else if(!fuseSel[0])fuseSel[0]=c;
+        else if(!fuseSel[1])fuseSel[1]=c;
+        else fuseSel[1]=c;
+        renderFuse();renderHand();
+        return;
+      }
       if(G.pendingAtk&&G.pendingAtk.defPi===ME&&G.phase!=='over'){
         ev.preventDefault();
         if(blockSel.includes(c))return;
@@ -11279,12 +11319,16 @@ function renderGemStrip(){
     // Forging no longer has a band to choose (flat price, random band —
     // see forgeCard), so tapping a gem now FORGES that colour outright
     // rather than opening a menu to pick a rung that no longer exists.
-    // Purple still opens the forge, where crafting and elites live.
+    //
+    // Purple used to open the forge from here, which is why tapping it
+    // "kept opening the forge menu" instead of spending the segments —
+    // reported directly. Every gem now does the same thing: spend it for a
+    // card. Purple's card is the Elite, at its own price.
     el.onclick=()=>{
       if(!mine)return;
-      if(col==='purple'){openForge();return;}
-      if((g[col]||0)<SEGMENT_CARD_COST){
-        toast('Need '+SEGMENT_CARD_COST+' '+info.role.toLowerCase()+' segments',1600);
+      const price=col==='purple'?ELITE_COST:SEGMENT_CARD_COST;
+      if((g[col]||0)<price){
+        toast('Need '+price+' '+info.role.toLowerCase()+' segments',1600);
         return;
       }
       doForge(col,0);
@@ -11321,11 +11365,14 @@ function openForge(){
   renderForge();
   $('forge').classList.remove('hide');
   // the fan stays visible while forging — you're picking from your own hand,
-  // so hiding it made the bench feel disconnected from where the cards live
+  // so hiding it made the bench feel disconnected from where the cards live.
+  // `forging` lifts it above the dimming veil (see the CSS note).
   openHandPanel();
+  $('handpanel').classList.add('forging');
 }
 function closeForge(){
   $('forge').classList.add('hide');
+  $('handpanel').classList.remove('forging');
   if(G.turn===ME&&G.handOpen)closeHandPanel();
   // drop references to cards that may since have been played or fused
   fuseSel=[null,null];
