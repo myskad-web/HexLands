@@ -1796,8 +1796,8 @@ body.land .handpanel-sheet{
    territory and undo the non-overlap split computed in layout(). */
 body.land .handpanel.defending .handpanel-sheet,
 .handpanel.defending .handpanel-sheet{
-  bottom:calc(var(--defendLift,52px) + var(--insetB,env(safe-area-inset-bottom)));
-  max-height:calc(var(--handPanelMax,60vh) - var(--defendLift,52px) + 6px);
+  bottom:calc(var(--defendLift,10px) + var(--insetB,env(safe-area-inset-bottom)));
+  max-height:calc(var(--handPanelMax,60vh) - var(--defendLift,10px) + 6px);
 }
 /* Lifting the whole sheet kept not being enough, because the head row —
    which carries Take-the-hit — renders BELOW the fan, so it inherits the
@@ -1805,7 +1805,19 @@ body.land .handpanel.defending .handpanel-sheet,
    button ABOVE the fan while defending and it clears the cards entirely,
    at any lift. The lift then only needs to keep it off the screen edge. */
 .handpanel.defending .handpanel-sheet{display:flex;flex-direction:column}
-.handpanel.defending .handpanel-head{order:-1;margin-bottom:6px}
+/* Button above the fan (see note above). Kept TIGHT to the cards: the head
+   row's own padding plus a margin was pushing the fan far enough down that
+   the card tops ran off the bottom of the screen. Zero margin, minimal row
+   height, and a smaller button — it only has to be tappable, not large. */
+.handpanel.defending .handpanel-head{
+  order:-1;margin:0 0 2px;padding:0;min-height:0;
+}
+.handpanel.defending .hp-hit{
+  padding:5px 14px;font-size:11px;border-radius:8px;
+}
+/* the fan itself sits right under the button rather than at its resting
+   offset, so nothing is pushed past the screen edge */
+.handpanel.defending .hand.fanwrap{margin-top:0;padding-top:0}
 /* Cards are also sized for a full-height portrait screen (96x152) with no
    landscape-specific reduction — on a ~390px-tall phone that alone was
    enough to push the fan's top edge into the board's upper half even
@@ -2943,7 +2955,7 @@ body.land .as-tally{font-size:12.5px}
 
 /* ---- forge / fusion bench (popup, not a menu screen) ---- */
 #forge.forge-pop{position:fixed;inset:0;z-index:64;display:flex;
-  flex-direction:column;align-items:center;justify-content:flex-start;
+  flex-direction:column;align-items:center;justify-content:center;
   pointer-events:none}
 /* The hand fan is open underneath while forging (see openForge), so the
    bench sits in the TOP portion rather than dead centre — same split
@@ -2986,6 +2998,12 @@ body.land .forge-pop .fuse-pick{max-height:78px}
   position:relative;cursor:pointer;transition:box-shadow .18s,border-color .18s;
 }
 .fuse-slot.filled{border-style:solid}
+/* a slot the dragged card is currently over */
+.fuse-slot.drop{
+  border-style:solid;border-color:#ffd76a;
+  background:rgba(60,42,16,.95);
+  box-shadow:0 0 20px rgba(255,200,90,.6);
+}
 /* a filled slot takes its own gem's colour, so a matched pair is obvious
    before you read a word — asked for directly */
 .fuse-slot.filled[data-gem]{box-shadow:0 0 16px var(--gemGlow,rgba(255,215,106,.5))}
@@ -3707,7 +3725,6 @@ body.land .forge-pop .fuse-pick{max-height:78px}
       <button id="fuseGo" class="go" disabled>Forge</button>
       <button id="forgeClose" class="fuse-x">✕</button>
     </div>
-    <div id="forgeRows" class="fuse-pick"></div>
   </div>
 </div>
 <div class="ovl hide" id="omen">
@@ -3816,7 +3833,7 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.10.8';
+const VERSION='0.10.9';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -10508,14 +10525,24 @@ function renderHand(){
     h.innerHTML='<div class="handempty">Hand is empty — cards come from dice rolls.</div>';
     return;
   }
-  const n=p.hand.length;
+  // While the forge is open the fan shows ONLY what the forge can use.
+  // Showing the whole hand and dimming the rest meant most of the fan was
+  // noise you had to look past to find the two cards that mattered.
+  const forging=!$('forge').classList.contains('hide');
+  const shown=forging?p.hand.filter(fusable):p.hand;
+  const n=shown.length;
   // a Forge in play buffs every unit — show it on the cards themselves so
   // you can see the bonus in your hand rather than only in the combat log
   const forge=p.perms.reduce((s,c)=>s+(c.forge||0),0);
   // overlap grows with hand size so the fan always fits the screen
   const vw=Math.min(window.innerWidth,520);
   const overlap=n>1?Math.max(-70,Math.min(-8,-((96*n)-(vw-56))/(n-1))):0;
-  p.hand.forEach((c,idx)=>{
+  if(forging&&!n){
+    h.innerHTML='<div class="handempty">No cards the forge can use \u2014 '+
+      'buy some with gem segments.</div>';
+    return;
+  }
+  shown.forEach((c,idx)=>{
     const d=document.createElement('div');
     // this must match the play handler exactly, or cards look live when
     // they're locked (before the roll, or while a 7 is unresolved)
@@ -10547,10 +10574,8 @@ function renderHand(){
       if(willAmplify)combo=' combo combo-amp';
       else if(willResonate)combo=' combo';
     }
-    // In forge mode the fan re-reads entirely: fusable cards are the live
-    // ones and everything else dims, so "which of these can I combine" is
-    // answered by looking rather than by tapping and being told no.
-    const forging=!$('forge').classList.contains('hide');
+    // In forge mode every card shown IS fusable (the fan is filtered above),
+    // so they all read as live; the picked ones additionally get .committed.
     const canFuse=forging&&fusable(c);
     d.className='card '+c.kind+
       (forging?(canFuse?' playable fusable':' spent'):(afford?' playable':' spent'))+
@@ -10590,15 +10615,57 @@ function renderHand(){
       // able to grab them from.
       if(!$('forge').classList.contains('hide')){
         ev.preventDefault();
-        if(!fusable(c)){
-          toast('Only segment-forged cards can be combined',1600);
-          return;
-        }
-        if(fuseSel.includes(c))fuseSel=fuseSel.map(x=>x===c?null:x);
-        else if(!fuseSel[0])fuseSel[0]=c;
-        else if(!fuseSel[1])fuseSel[1]=c;
-        else fuseSel[1]=c;
-        renderFuse();renderHand();
+        if(!fusable(c))return;
+        const sX=ev.clientX,sY=ev.clientY;
+        let dragging=false,overSlot=null;
+        try{d.setPointerCapture(ev.pointerId);}catch(e){}
+        const slotAt=(x,y)=>{
+          for(const id of ['fuseA','fuseB']){
+            const r=$(id).getBoundingClientRect();
+            if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)return id;
+          }
+          return null;
+        };
+        const fmv=(e)=>{
+          const dx=e.clientX-sX,dy=e.clientY-sY;
+          if(!dragging&&Math.hypot(dx,dy)>12){
+            dragging=true;
+            d.classList.add('dragging','defending');   // reuse the lift-above-overlay z-index
+          }
+          if(!dragging)return;
+          d.style.setProperty('transform',
+            `translate(${dx}px,${dy}px) scale(1.06) rotate(0deg)`,'important');
+          const was=overSlot;
+          overSlot=slotAt(e.clientX,e.clientY);
+          if(was!==overSlot){
+            ['fuseA','fuseB'].forEach(id=>$(id).classList.toggle('drop',id===overSlot));
+          }
+        };
+        const fup=(e)=>{
+          d.removeEventListener('pointermove',fmv);
+          d.removeEventListener('pointerup',fup);
+          d.removeEventListener('pointercancel',fup);
+          ['fuseA','fuseB'].forEach(id=>$(id).classList.remove('drop'));
+          d.classList.remove('dragging','defending');
+          if(dragging&&overSlot){
+            // dropped on a specific slot — put it exactly there, replacing
+            // whatever was in it, and clear it from the other slot if it
+            // was already sitting there
+            const i=overSlot==='fuseA'?0:1;
+            fuseSel=fuseSel.map(x=>x===c?null:x);
+            fuseSel[i]=c;
+          }else if(!dragging){
+            // a plain tap still fills the next free slot / toggles off
+            if(fuseSel.includes(c))fuseSel=fuseSel.map(x=>x===c?null:x);
+            else if(!fuseSel[0])fuseSel[0]=c;
+            else if(!fuseSel[1])fuseSel[1]=c;
+            else fuseSel[1]=c;
+          }
+          renderFuse();renderHand();
+        };
+        d.addEventListener('pointermove',fmv);
+        d.addEventListener('pointerup',fup);
+        d.addEventListener('pointercancel',fup);
         return;
       }
       if(G.pendingAtk&&G.pendingAtk.defPi===ME&&G.phase!=='over'){
@@ -11557,31 +11624,9 @@ function renderFuse(){
   $('fuseGo').disabled=!pv;
   $('fuseGo').style.opacity=pv?1:.45;
 
-  // the picker: only cards that can actually be forged, each glowing in its
-  // own gem colour
-  const wrap=$('forgeRows');
-  wrap.innerHTML='';
-  const cands=fuseCandidates();
-  if(!cands.length){
-    wrap.innerHTML='<div class="fuse-empty">Nothing to forge yet \u2014 buy cards with gem segments.</div>';
-    return;
-  }
-  cands.forEach(c=>{
-    const on=fuseSel.includes(c);
-    const d=document.createElement('button');
-    d.className='fp-card'+(on?' on':'');
-    d.innerHTML='<span class="fps">'+(c.atk||0)+'\u2694</span>'+
-      '<span class="fpn">'+c.name+'</span>';
-    paintGem(d,c);
-    d.onclick=()=>{
-      if(on){fuseSel=fuseSel.map(x=>x===c?null:x);}
-      else if(!fuseSel[0])fuseSel[0]=c;
-      else if(!fuseSel[1])fuseSel[1]=c;
-      else fuseSel[1]=c;      // replace the second, keep the first pinned
-      renderFuse();
-    };
-    wrap.appendChild(d);
-  });
+  // The picker row is gone — the hand fan below is the picker now (see
+  // renderHand's forge branch), so duplicating it here was two lists of the
+  // same cards competing for the same job.
 }
 function doTrade(from,to){
   if(G.phase!=='build'||G.turn!==ME)return;
