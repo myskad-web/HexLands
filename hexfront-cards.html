@@ -3837,7 +3837,7 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.11.0';
+const VERSION='0.11.1';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -10664,8 +10664,20 @@ function renderHand(){
             const i=overSlot==='fuseA'?0:1;
             fuseSel=fuseSel.map(x=>x===c?null:x);
             fuseSel[i]=c;
-          }else if(!dragging){
-            // a plain tap still fills the next free slot / toggles off
+          }else{
+            // THE "FORGE DOES NOTHING" BUG: real touch almost always has a
+            // few px of jitter between finger-down and finger-up — a
+            // genuine tap on a real device routinely exceeds the 12px
+            // threshold that arms `dragging`. Previously `dragging&&
+            // !overSlot` (armed, but released over neither slot) matched
+            // NEITHER branch here — the event silently did nothing at all,
+            // no toast, no state change, no card placed. That's exactly
+            // what "sometimes lets me insert, sometimes doesn't, and Forge
+            // does nothing" looks like from the outside, since a slot that
+            // never got filled means fuseGo never enables. Now any release
+            // that isn't a clean drop onto a slot falls back to the same
+            // "fill the next free slot / toggle off" behaviour as a plain
+            // tap — a tap is exactly what a jittery drag-to-nowhere is.
             if(fuseSel.includes(c))fuseSel=fuseSel.map(x=>x===c?null:x);
             else if(!fuseSel[0])fuseSel[0]=c;
             else if(!fuseSel[1])fuseSel[1]=c;
@@ -10708,7 +10720,20 @@ function renderHand(){
           d.removeEventListener('pointercancel',dup);
           st.classList.remove('target','overtarget');
           d.classList.remove('dragging','armed','defending');
-          if(dragging&&over){
+          // THE "WON'T LET ME DEFEND" BUG: committing required BOTH dragging
+          // to have armed (>12px moved — real touch jitter crosses this
+          // constantly) AND the release point to land above the stage's own
+          // bottom edge. A drag that armed but fell short of that line
+          // matched neither branch here: no commit, no toast, the card just
+          // snapped back with zero feedback. Reported as "sometimes it just
+          // won't let me defend even with cards and energy" — that IS what
+          // this looked like, repeatedly, on ordinary touch imprecision.
+          // There is no second meaning for a drag in this context — tap
+          // already means inspect, so ANY completed drag here can only mean
+          // "commit this as a blocker". Dropped the position requirement:
+          // stageCommit's own checks (affordability, zero-damage) still
+          // reject it with a clear toast if it genuinely can't be used.
+          if(dragging){
             const r=stageCommit(c);
             if(r==='energy')toast('Not enough energy to commit that');
             else if(r==='nodmg')toast('That card deals no damage — it cannot kill an attacker');
@@ -10716,14 +10741,10 @@ function renderHand(){
             if(r!=='killed')renderHand();
             return;
           }
-          if(!dragging){
-            // a plain tap still inspects, exactly as on your own turn
-            const was=d.classList.contains('inspect');
-            h.querySelectorAll('.card.inspect').forEach(x=>x.classList.remove('inspect'));
-            if(!was)d.classList.add('inspect');
-            return;
-          }
-          renderHand();
+          // a plain tap still inspects, exactly as on your own turn
+          const was=d.classList.contains('inspect');
+          h.querySelectorAll('.card.inspect').forEach(x=>x.classList.remove('inspect'));
+          if(!was)d.classList.add('inspect');
         };
         d.addEventListener('pointermove',dmv);
         d.addEventListener('pointerup',dup);
