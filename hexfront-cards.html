@@ -2955,7 +2955,7 @@ body.land .as-tally{font-size:12.5px}
 
 /* ---- forge / fusion bench (popup, not a menu screen) ---- */
 #forge.forge-pop{position:fixed;inset:0;z-index:64;display:flex;
-  flex-direction:column;align-items:center;justify-content:center;
+  flex-direction:column;align-items:center;justify-content:flex-start;
   pointer-events:none}
 /* The hand fan is open underneath while forging (see openForge), so the
    bench sits in the TOP portion rather than dead centre — same split
@@ -2981,14 +2981,13 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 .forge-stage{
   position:relative;pointer-events:auto;
   display:flex;flex-direction:column;align-items:center;gap:8px;
-  /* The bench needs its OWN solid ground. Without this the slots' own
-     translucent fill let the board hexes show straight through them, which
-     is what made the whole bench read as greyed-out/disabled even though
-     it was fully live. */
-  padding:12px 14px;max-width:min(96vw,600px);
-  background:linear-gradient(180deg,rgba(26,18,10,.97),rgba(12,8,4,.98));
-  border:1px solid rgba(224,179,72,.45);border-radius:16px;
-  box-shadow:0 12px 40px rgba(0,0,0,.75);
+  /* NO panel, border or glow — just the slots floating over the dimmed
+     board. An earlier pass added a solid panel to fix legibility, but the
+     legibility problem was the SLOTS being see-through, not the absence of
+     a frame; the frame just turned the bench back into the "menu" it was
+     supposed to stop being. Slots carry their own opaque fill instead. */
+  padding:0;max-width:min(96vw,600px);
+  background:none;border:0;box-shadow:none;
 }
 .fuse-bench{display:flex;align-items:center;justify-content:center;gap:8px}
 .fuse-slot{
@@ -3026,8 +3025,13 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 .fuse-slot .mini .ms{font-size:13px;font-weight:800;color:#e8d7b0}
 .fuse-slot .mini .mb{font-size:9px;font-weight:800;color:#ffd76a;margin-top:4px}
 .fuse-arrow{font-size:19px;font-weight:800;color:rgba(232,215,176,.45)}
-.fuse-note{font-size:12px;font-weight:700;text-align:center;min-height:15px;
-  color:rgba(232,215,176,.7);text-shadow:0 1px 3px rgba(0,0,0,.9)}
+.fuse-note{font-size:12px;font-weight:700;text-align:center;min-height:0;
+  color:rgba(232,215,176,.85);
+  /* text over a busy board needs its own backing, now that the bench has no
+     panel behind it */
+  background:rgba(10,7,3,.82);padding:3px 10px;border-radius:99px;
+  text-shadow:0 1px 3px rgba(0,0,0,.9)}
+.fuse-note:empty{display:none}
 .fuse-note.ok{color:#7fd18a}
 .fuse-acts{display:flex;align-items:center;gap:10px}
 .fuse-acts .go{padding:9px 26px;font-size:13px}
@@ -3833,7 +3837,7 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.10.9';
+const VERSION='0.11.0';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -7832,6 +7836,12 @@ let blockThen=null;
 let blockSel=[];
 function showBlockPrompt(card,defPi,cands){
   blockSel=[];
+  // An attack can land while the forge is open (the AI attacks on its own
+  // turn, but a forge left open across the turn boundary, or opened during
+  // an animation, gets caught). Both modes claim the hand fan and install
+  // competing tap handlers, so the forge stands down: the attack is the
+  // thing with a timer on it.
+  if(!$('forge').classList.contains('hide'))closeForge();
   const st=$('atkStage');
   $('asLabel').textContent='Opponent attacks';
   $('asCard').innerHTML='<div class="card '+card.kind+
@@ -11429,6 +11439,16 @@ function doCraft(){
 }
 function openForge(){
   if(G.phase!=='build'||G.turn!==ME)return;
+  // The forge and a pending block BOTH take over the hand fan, and each
+  // installs its own tap handler on the cards. Opening the forge while an
+  // attack is waiting left the fan in `forging` AND `defending` at once —
+  // taps would go to the forge while the attacker sat unanswered on screen.
+  // The attack has to be dealt with first; it's the thing with a timer on
+  // it, and it's only ever a tap away from resolved.
+  if(G.pendingAtk&&G.pendingAtk.defPi===ME){
+    toast('Answer the attack first',1600);
+    return;
+  }
   renderForge();
   $('forge').classList.remove('hide');
   // the fan stays visible while forging — you're picking from your own hand,
@@ -11437,12 +11457,21 @@ function openForge(){
   openHandPanel();
   $('handpanel').classList.add('forging');
 }
+// closeForge and closeHandPanel each close the other (they're one mode from
+// the player's side — see closeHandPanel's note). That's mutual recursion,
+// and it currently only terminates because the hide-class happens to be set
+// before the other call — which would silently become an infinite loop if
+// anyone reordered these lines. Guarded explicitly instead.
+let closingForge=false;
 function closeForge(){
+  if(closingForge)return;
+  closingForge=true;
   $('forge').classList.add('hide');
   $('handpanel').classList.remove('forging');
   if(G.turn===ME&&G.handOpen)closeHandPanel();
   // drop references to cards that may since have been played or fused
   fuseSel=[null,null];
+  closingForge=false;
 }
 function renderForge(){
   // No explanatory paragraph any more — two slots, a plus, an equals and a
@@ -11653,7 +11682,11 @@ function doForge(col,band){
 $('forgeBtn').onclick=openForge;
 $('forgeClose').onclick=closeForge;
 $('fuseGo').onclick=doFuse;
-$('forgeBackdrop').onclick=closeForge;
+$('forgeBackdrop').onclick=()=>{
+  // closeForge also puts the fan back, so one tap on the dim area exits the
+  // whole forge mode rather than half of it
+  closeForge();
+};
 $('buyBtnPanel').onclick=buyCard;
 $('road').onclick=()=>{
   if(G.phase!=='build'||G.turn!==ME)return;
@@ -11678,6 +11711,10 @@ function openHandPanel(){
 function closeHandPanel(){
   $('handpanel').classList.add('hide');
   G.handOpen=false;
+  // The forge picks cards FROM the fan, so a forge left open with the fan
+  // closed is a dead end — the reported symptom was having to close and
+  // reopen the forge to get the cards back. They live and die together.
+  if(!$('forge').classList.contains('hide'))closeForge();
   hud();
 }
 $('handstack').onclick=openHandPanel;
