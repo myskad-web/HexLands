@@ -3837,7 +3837,7 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.11.1';
+const VERSION='0.11.2';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -7584,6 +7584,12 @@ function forgeCard(pi,col,band){
     if(g.purple<ELITE_COST)return null;
     g.purple-=ELITE_COST;
     const c=mkEliteUnit(pi);
+    // An Elite is bought with segments exactly like every other colour, so
+    // it belongs at the bench too. This branch returns early and never set
+    // the flag, which made Elites the one segment card that silently
+    // couldn't be fused — indistinguishable, from the player's side, from
+    // "the forge won't let me select my cards".
+    c.forged=true;
     return giveCard(pi,c)?c:c;
   }
   if(g[col]<SEGMENT_CARD_COST)return null;
@@ -10494,7 +10500,13 @@ function hud(){
   // segments (the very thing that produces fusable cards) locked you OUT of
   // the bench that exists to combine them. Reported directly. Gate on what
   // it actually needs: two fusable cards, or an affordable elite.
-  const anyForge=myBuild&&(fuseCandidates().length>=2
+  // Enabled from ONE fusable card, not two. Requiring two meant that after
+  // buying your first segment card the button sat dead with no explanation —
+  // "I just bought gem segment cards and it won't let me open the Forge" is
+  // exactly what that produces. Opening with one card is harmless: the bench
+  // shows the card in a slot and says what's still needed, which teaches the
+  // two-card rule instead of silently enforcing it.
+  const anyForge=myBuild&&(fuseCandidates().length>=1
     ||gemsOf(ME).purple>=ELITE_COST);
   const fb=$('forgeBtn');
   if(fb){fb.disabled=!anyForge;fb.classList.toggle('ready',!!anyForge);}
@@ -11664,7 +11676,16 @@ function renderFuse(){
     R.removeAttribute('data-gem');
   }
   const note=$('fuseNote');
-  if(!a||!b){ note.className='fuse-note'; note.textContent=''; }
+  const nCand=fuseCandidates().length;
+  if(!a||!b){
+    note.className='fuse-note';
+    // Say what's actually missing. A bare empty slot and a greyed button
+    // don't distinguish "pick another card" from "you don't own another
+    // card", and those need completely different actions from the player.
+    note.textContent=nCand<2
+      ? 'Need one more segment-forged card \u2014 buy one with gem segments'
+      : '';
+  }
   else if(pv.sameCol){
     note.className='fuse-note ok';
     note.textContent='Matched colour \u2014 +2 attack';
