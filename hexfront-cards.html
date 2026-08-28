@@ -3837,7 +3837,7 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.11.2';
+const VERSION='0.11.3';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -7847,7 +7847,7 @@ function showBlockPrompt(card,defPi,cands){
   // an animation, gets caught). Both modes claim the hand fan and install
   // competing tap handlers, so the forge stands down: the attack is the
   // thing with a timer on it.
-  if(!$('forge').classList.contains('hide'))closeForge();
+  if(G.forgeOpen)closeForge();
   const st=$('atkStage');
   $('asLabel').textContent='Opponent attacks';
   $('asCard').innerHTML='<div class="card '+card.kind+
@@ -8874,7 +8874,7 @@ function startTurn(pi){
     if(plating)bits.push('+'+plating+'\u26e8');
     log('Outposts: '+bits.join(', ')+'.');
   }
-  G.built=false;G.rolled=false;G.roadMode=false;G.cityMode=false;G.boughtMystery=0;
+  G.built=false;G.rolled=false;G.roadMode=false;G.cityMode=false;G.boughtMystery=0;G.forgeOpen=false;
   G.unitsThisTurn=0;G.cmdUsed[pi]=false;G.costCut=0;
   G.phase='roll';
   if(NET.on&&pi!==ME){
@@ -10550,7 +10550,7 @@ function renderHand(){
   // While the forge is open the fan shows ONLY what the forge can use.
   // Showing the whole hand and dimming the rest meant most of the fan was
   // noise you had to look past to find the two cards that mattered.
-  const forging=!$('forge').classList.contains('hide');
+  const forging=!!G.forgeOpen;
   const shown=forging?p.hand.filter(fusable):p.hand;
   const n=shown.length;
   // a Forge in play buffs every unit — show it on the cards themselves so
@@ -10635,7 +10635,7 @@ function renderHand(){
       // works, but picking from the fan is what the design asked for —
       // the fan is where your cards live, so that's where you should be
       // able to grab them from.
-      if(!$('forge').classList.contains('hide')){
+      if(G.forgeOpen){
         ev.preventDefault();
         if(!fusable(c))return;
         const sX=ev.clientX,sY=ev.clientY;
@@ -11482,6 +11482,14 @@ function openForge(){
     toast('Answer the attack first',1600);
     return;
   }
+  // Explicit state, not a DOM-class read. renderHand used to ask
+  // `$('forge').classList.contains('hide')`, which is true/false at
+  // different moments depending on call order — and openHandPanel()'s hud()
+  // does NOT repaint the hand, so the fan kept whatever rendering it had
+  // from BEFORE the forge opened: unfiltered, and dimmed by energy
+  // affordability instead of forgeability. That is the reported
+  // "greys out the forgeable cards and not the normal ones".
+  G.forgeOpen=true;
   renderForge();
   $('forge').classList.remove('hide');
   // the fan stays visible while forging — you're picking from your own hand,
@@ -11489,6 +11497,7 @@ function openForge(){
   // `forging` lifts it above the dimming veil (see the CSS note).
   openHandPanel();
   $('handpanel').classList.add('forging');
+  renderHand();   // MUST repaint: hud() alone does not redraw the fan
 }
 // closeForge and closeHandPanel each close the other (they're one mode from
 // the player's side — see closeHandPanel's note). That's mutual recursion,
@@ -11499,12 +11508,14 @@ let closingForge=false;
 function closeForge(){
   if(closingForge)return;
   closingForge=true;
+  G.forgeOpen=false;
   $('forge').classList.add('hide');
   $('handpanel').classList.remove('forging');
   if(G.turn===ME&&G.handOpen)closeHandPanel();
   // drop references to cards that may since have been played or fused
   fuseSel=[null,null];
   closingForge=false;
+  renderHand();   // lift the forge filter immediately, don't wait for a hud()
 }
 function renderForge(){
   // No explanatory paragraph any more — two slots, a plus, an equals and a
@@ -11577,8 +11588,27 @@ function fuseCandidates(){return (G.players[ME].hand||[]).filter(fusable);}
 function fusePreview(a,b){
   if(!a||!b)return null;
   const hi=(b.tier>a.tier)?b:a;
-  const band=Math.min(WB_BANDS.length-1,Math.max(a.tier,b.tier)+1);
-  return {band,col:hi.gem||a.gem||GEM_COLS[0],
+  const top=WB_BANDS.length-1;
+  const raw=Math.max(a.tier,b.tier)+1;
+  const band=Math.min(top,raw);
+  // Fusing two cards that are ALREADY at the top band can't go a band
+  // higher — the old code silently capped, so the result came out the same
+  // tier as its inputs and the player watched two Legends turn into one
+  // Legend. That is exactly "I put two cards in, pressed forge, and got
+  // nothing better". At the cap the reward becomes raw stats instead of a
+  // band: `capped` is read by doFuse to add extra attack on top of the
+  // usual bonuses, so a top-tier fuse is still a clear gain.
+  const capped=raw>top;
+  // The result colour follows the stronger input. Purple (Elite) is not a
+  // producible terrain colour, so a purple result would be built from a
+  // colour the board can't supply — fall back to the OTHER input's colour
+  // when the winner is purple, and only keep purple if both are.
+  let col=hi.gem||a.gem||GEM_COLS[0];
+  if(col==='purple'){
+    const other=(hi===a?b:a).gem;
+    if(other&&other!=='purple')col=other;
+  }
+  return {band,col,capped,
           sameCol:(a.gem&&b.gem&&a.gem===b.gem)};
 }
 function doFuse(){
@@ -11613,6 +11643,10 @@ function doFuse(){
   // "combine two reds" case the design asked for is genuinely the best use
   // of the bench rather than merely equivalent to any two cards.
   if(pv.sameCol)c.atk+=2;
+  // At the band cap there is no tier to gain, so the payoff is stats —
+  // otherwise two Legends fuse into one Legend and the player has simply
+  // lost a card. See fusePreview's `capped`.
+  if(pv.capped){c.atk+=3;c.maxHp+=3;c.curHp=c.maxHp;}
   // ...and it gains an ability. This is the real payoff: a band and some
   // attack could be got by waiting, but an effect can only come from here.
   applyBoon(c,rollBoon(pv.band));
@@ -11666,7 +11700,8 @@ function renderFuse(){
     R.className='fuse-slot result ready';
     R.innerHTML='<div class="mini"><div class="mn">'+WB_BANDS[pv.band]+'</div>'+
       '<div class="mt">'+(GEM_EPITHET[pv.col]||'')+'</div>'+
-      '<div class="ms">'+(pv.sameCol?'+2\u2694':'\u2694')+'</div>'+
+      '<div class="ms">'+(pv.capped?'+3\u2694 +3\u2665'
+        :(pv.sameCol?'+2\u2694':'\u2694'))+'</div>'+
       '<div class="mb">+ ability</div></div>';
     R.style.setProperty('--gemGlow',(GEM_INFO[pv.col]||{}).hex||'#ffd76a');
     R.dataset.gem=pv.col;
@@ -11685,6 +11720,10 @@ function renderFuse(){
     note.textContent=nCand<2
       ? 'Need one more segment-forged card \u2014 buy one with gem segments'
       : '';
+  }
+  else if(pv.capped){
+    note.className='fuse-note ok';
+    note.textContent='Both at top band \u2014 forged for raw power instead';
   }
   else if(pv.sameCol){
     note.className='fuse-note ok';
@@ -11719,7 +11758,7 @@ function doForge(col,band){
   hud();renderHand();
   // only repaint the bench if it happens to be open — forging is now done
   // from the gem strip, not from inside the panel
-  if(!$('forge').classList.contains('hide'))renderFuse();
+  if(G.forgeOpen)renderFuse();
 }
 $('forgeBtn').onclick=openForge;
 $('forgeClose').onclick=closeForge;
@@ -11756,7 +11795,7 @@ function closeHandPanel(){
   // The forge picks cards FROM the fan, so a forge left open with the fan
   // closed is a dead end — the reported symptom was having to close and
   // reopen the forge to get the cards back. They live and die together.
-  if(!$('forge').classList.contains('hide'))closeForge();
+  if(G.forgeOpen)closeForge();
   hud();
 }
 $('handstack').onclick=openHandPanel;
@@ -12854,7 +12893,7 @@ function resetForNewGame(){
   // without this a rematch skips the opening hand entirely — the flag would
   // still be true from the previous game
   G.dealtOpening=false;
-  G.built=false;G.rolled=false;G.roadMode=false;G.cityMode=false;G.boughtMystery=0;
+  G.built=false;G.rolled=false;G.roadMode=false;G.cityMode=false;G.boughtMystery=0;G.forgeOpen=false;
   G.freshCards.clear();
   G.overflowQueue=[[],[]];
   // Segments are per-game, not per-account. A purse carried over would let a
