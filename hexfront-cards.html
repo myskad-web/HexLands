@@ -2979,7 +2979,20 @@ body.land .as-tally{font-size:12.5px}
    are supposed to be picking from is dimmed along with the board. Everything
    else stays dimmed — that was the point of the veil. */
 .handpanel.forging{z-index:66}
-.handpanel.forging .handpanel-backdrop{background:transparent}
+/* THE "FORGE BUTTON DOES NOTHING" BUG.
+   Lifting the panel above the forge veil (so the fan isn't dimmed) also
+   lifts its BACKDROP, which is `position:absolute;inset:0` — a full-screen
+   sheet — to z-index 66, above the entire forge popup at 64. Every tap
+   aimed at the Forge button actually landed on this backdrop, whose
+   handler closes the hand panel, which closes the forge. Forge shuts, no
+   cards consumed, nothing forged: precisely the reported symptom, and
+   unfixable by aiming more carefully because the button was never
+   reachable at all.
+   Making it transparent (the previous attempt) only changed how it LOOKED
+   — it still swallowed every tap. It has to stop receiving them. The
+   panel's own sheet still gets taps because it sets pointer-events:auto
+   on its children. */
+.handpanel.forging .handpanel-backdrop{background:transparent;pointer-events:none}
 body.land .forge-pop .forge-stage{margin-top:2px;padding:8px 12px;gap:6px}
 body.land .forge-pop .fuse-slot{width:74px;height:98px}
 body.land .forge-pop .fp-card{width:62px}
@@ -3865,7 +3878,7 @@ body.land .fuse-slot .card{transform:scale(.84)}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.11.4';
+const VERSION='0.11.5';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
