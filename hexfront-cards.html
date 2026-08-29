@@ -2465,6 +2465,20 @@ header .sub{cursor:pointer}
   position:absolute;top:3px;right:5px;z-index:5;
   display:flex;gap:2px;align-items:center;
 }
+/* gem-segment badge: this card came from gem segments and can be forged */
+.cseg{
+  position:absolute;top:3px;right:5px;z-index:5;
+  width:13px;height:15px;
+  background:var(--segCol,#ffd76a);
+  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  box-shadow:0 0 7px var(--segCol,#ffd76a);
+  border:0;
+}
+.cseg::after{
+  content:'';position:absolute;inset:2px;
+  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  background:linear-gradient(150deg,rgba(255,255,255,.65),rgba(255,255,255,0) 60%);
+}
 .cforge i{
   display:block;width:6px;height:7px;border-radius:1px;
   transform:rotate(45deg);
@@ -2973,13 +2987,17 @@ body.land .forge-pop .fp-card{width:62px}
 body.land .forge-pop .fuse-pick{max-height:78px}
 #forge.forge-pop.hide{display:none}
 .forge-veil{
-  position:absolute;inset:0;pointer-events:auto;
+  position:absolute;inset:0;z-index:1;pointer-events:auto;
   /* board stays readable underneath — dimmed, not blacked out */
   background:radial-gradient(120% 90% at 50% 45%,
     rgba(8,5,3,.62) 0%,rgba(8,5,3,.86) 70%,rgba(8,5,3,.92) 100%);
 }
 .forge-stage{
-  position:relative;pointer-events:auto;
+  /* explicit z-index: relying on DOM order alone put the bench and the veil
+     at the same stacking level, so a hit-test near a button edge could
+     resolve to the veil and close the forge instead of pressing the
+     button */
+  position:relative;z-index:2;pointer-events:auto;
   display:flex;flex-direction:column;align-items:center;gap:8px;
   /* NO panel, border or glow — just the slots floating over the dimmed
      board. An earlier pass added a solid panel to fix legibility, but the
@@ -2991,7 +3009,8 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 }
 .fuse-bench{display:flex;align-items:center;justify-content:center;gap:8px}
 .fuse-slot{
-  flex:0 0 auto;width:88px;height:118px;border-radius:12px;
+  /* big enough to hold a real card face at a readable scale */
+  flex:0 0 auto;width:108px;height:154px;border-radius:12px;
   border:1.5px dashed rgba(232,215,176,.45);background:#140f0a;
   display:flex;align-items:center;justify-content:center;overflow:hidden;
   position:relative;cursor:pointer;transition:box-shadow .18s,border-color .18s;
@@ -3017,6 +3036,13 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 .fs-empty{font-size:10.5px;font-weight:700;letter-spacing:.08em;
   text-transform:uppercase;color:rgba(232,215,176,.38);padding:0 6px;
   text-align:center;line-height:1.35}
+.fuse-slot .card{
+  /* real cards are 96x152; scale to the slot and strip the fan's own
+     interactive affordances — this one is a display, not a target */
+  transform:scale(.92);pointer-events:none;cursor:default;
+  box-shadow:none!important;
+}
+body.land .fuse-slot .card{transform:scale(.84)}
 .fuse-slot .mini{width:100%;padding:6px 5px;text-align:center}
 .fuse-slot .mini .mn{font-size:10.5px;font-weight:800;color:#f0e0b8;
   line-height:1.2;margin-bottom:3px}
@@ -3034,7 +3060,9 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 .fuse-note:empty{display:none}
 .fuse-note.ok{color:#7fd18a}
 .fuse-acts{display:flex;align-items:center;gap:10px}
-.fuse-acts .go{padding:9px 26px;font-size:13px}
+.fuse-acts{position:relative;z-index:3}
+.fuse-acts .go{padding:12px 34px;font-size:14px;min-height:44px}
+.fuse-x{min-width:44px;min-height:44px}
 .fuse-x{
   width:32px;height:32px;padding:0;border-radius:50%;
   display:flex;align-items:center;justify-content:center;font-size:14px;
@@ -3837,7 +3865,7 @@ body.land .forge-pop .fuse-pick{max-height:78px}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.11.3';
+const VERSION='0.11.4';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -9793,6 +9821,15 @@ function cardFaceHTML(c,pi){
         `<i style="background:${(GEM_INFO[c.gem]||{}).hex||'#ffd76a'}"></i>`).join('')+
       `</div>`
     : '';
+  // Gem-segment badge, top-right. Only cards BOUGHT WITH SEGMENTS carry
+  // `forged`, and only those can go to the bench — so this is the "can I
+  // forge with this?" answer, readable on the card itself instead of only
+  // discoverable by opening the forge and seeing what's left in the fan.
+  // Sits opposite the cost gem (top-left) and above the rank pips, which
+  // only fused cards have, so the two never collide on a plain segment card.
+  const segBadge=(c.forged&&!c.forgeRank)
+    ? `<div class="cseg" style="--segCol:${(GEM_INFO[c.gem]||{}).hex||'#ffd76a'}"></div>`
+    : '';
   // a defender's card carries its body as well as its swing
   const bodyBadge=c.taunt?`<div class="cbody">${c.armor!=null?c.armor:c.maxArmor}</div>`:
     // BATTLE SYSTEM: every unit now has a body, and you cannot decide whether
@@ -9821,7 +9858,7 @@ function cardFaceHTML(c,pi){
     `<div class="cplate">${c.name}</div>`+
     `<div class="ctag"${tagStyle}>${c.city?'\u2727 ':c.heavy?'\u2726 ':''}${c.tag}</div>`+stars+
     `<div class="cdesc">${c.desc||''}</div>`+
-    bodyBadge+rankPips+
+    bodyBadge+rankPips+segBadge+
     `<div class="catk${atkClass}">${badge}</div>`;
 }
 // Defender rows. Rebuilt wholesale on every change — a wall is at most four
@@ -11497,6 +11534,10 @@ function openForge(){
   // `forging` lifts it above the dimming veil (see the CSS note).
   openHandPanel();
   $('handpanel').classList.add('forging');
+  // Buying a card mid-forge isn't useful and the button just crowds the
+  // panel under the fan — hidden for the duration, same as the Mystery
+  // button is while defending.
+  $('buyBtnPanel').classList.add('hide');
   renderHand();   // MUST repaint: hud() alone does not redraw the fan
 }
 // closeForge and closeHandPanel each close the other (they're one mode from
@@ -11510,6 +11551,7 @@ function closeForge(){
   closingForge=true;
   G.forgeOpen=false;
   $('forge').classList.add('hide');
+  $('buyBtnPanel').classList.remove('hide');
   $('handpanel').classList.remove('forging');
   if(G.turn===ME&&G.handOpen)closeHandPanel();
   // drop references to cards that may since have been played or fused
@@ -11660,10 +11702,11 @@ function doFuse(){
 }
 function slotHTML(c){
   if(!c)return '<span class="fs-empty">Empty</span>';
-  return '<div class="mini"><div class="mn">'+c.name+'</div>'+
-    '<div class="mt">'+(c.tag||'')+'</div>'+
-    '<div class="ms">'+(c.atk||0)+'\u2694 &middot; '+(c.curHp||0)+'\u2665</div>'+
-    (c.boon?'<div class="mb">'+c.boon+'</div>':'')+'</div>';
+  // The real card face, not a text summary. A slot used to show name/tag/
+  // stats as plain text, so you couldn't actually see the card you were
+  // about to spend — art, ability text, gem and cost were all missing.
+  return '<div class="card '+c.kind+
+    (c.kind==='unit'&&c.arch?' a-'+c.arch:'')+'">'+cardFaceHTML(c,ME)+'</div>';
 }
 // A card's own gem colour, used to glow both the slot it sits in and its
 // chip in the picker — matching pairs then read as matching without a
@@ -11763,9 +11806,14 @@ function doForge(col,band){
 $('forgeBtn').onclick=openForge;
 $('forgeClose').onclick=closeForge;
 $('fuseGo').onclick=doFuse;
-$('forgeBackdrop').onclick=()=>{
-  // closeForge also puts the fan back, so one tap on the dim area exits the
-  // whole forge mode rather than half of it
+$('forgeBackdrop').onclick=(e)=>{
+  // Only a tap on the dim area ITSELF closes. Without this check a click
+  // that started on a child (the Forge button, a slot) could still close
+  // the whole thing if it bubbled or if the real hit-test landed a pixel
+  // outside the button — reported as "pressing Forge just takes me out of
+  // it and nothing happens", with no cards consumed, which is exactly what
+  // an accidental backdrop-close looks like.
+  if(e.target!==e.currentTarget)return;
   closeForge();
 };
 $('buyBtnPanel').onclick=buyCard;
@@ -11937,7 +11985,21 @@ function advanceDraft(){
   }
   if(who===FOE){
     toast('Opponent is placing…');
+    // The AI's placement is on a timer, and a timer reads the world when it
+    // FIRES, not when it was scheduled. If anything advances the draft in
+    // that 650ms window — a duplicate advanceDraft() (see the coin-toss
+    // re-entry note above), a stray tap, a late network message — this
+    // callback still ran `aiPlaceVillage()` unconditionally and handed the
+    // opponent an extra settlement, leaving the human short. That is the
+    // reported "sometimes the opponent picks 3 and I only get 1", and its
+    // intermittency is exactly what a timing window looks like.
+    // Capture the step this placement is FOR, and verify on arrival that
+    // the draft is still there and still owes FOE a placement.
+    const forStep=G.draftStep;
     setTimeout(()=>{
+      if(G.phase!=='draft')return;                 // draft already resolved
+      if(G.draftStep!==forStep)return;             // someone else advanced it
+      if(G.draftOrder[G.draftStep]!==FOE)return;   // no longer FOE's turn
       const v=aiPlaceVillage();
       if(v)log('Opponent took a corner worth '+v.pips+' pips.');
       G.draftStep++;advanceDraft();
