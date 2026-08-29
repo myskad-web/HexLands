@@ -2993,6 +2993,20 @@ body.land .as-tally{font-size:12.5px}
    panel's own sheet still gets taps because it sets pointer-events:auto
    on its children. */
 .handpanel.forging .handpanel-backdrop{background:transparent;pointer-events:none}
+/* v0.11.5 fixed the BACKDROP's full-screen sheet swallowing taps at z-index
+   66, but missed that .handpanel ITSELF is also `position:absolute;inset:0`
+   — an invisible full-viewport box with default pointer-events:auto. Lifted
+   to z-index 66 for the same reason, it covers the gap between the forge
+   popup's Forge button and the fan below just as completely as the backdrop
+   did, and it has no click handler, so a tap there simply does nothing.
+   Same bug, same fix, one level higher: the wrapper goes pointer-events:none
+   too, and children that must stay tappable (the fan's cards, the
+   handpanel-head buttons) already re-enable themselves via
+   `.handpanel-sheet>*{pointer-events:auto}` regardless of what an ancestor
+   sets, so nothing downstream of this needs to change. */
+.handpanel.forging{pointer-events:none}
+/* the fan's cards and the panel head's own buttons re-declare pointer-events
+   themselves and stay tappable — see the rules above/below this block. */
 body.land .forge-pop .forge-stage{margin-top:2px;padding:8px 12px;gap:6px}
 body.land .forge-pop .fuse-slot{width:74px;height:98px}
 body.land .forge-pop .fp-card{width:62px}
@@ -3878,7 +3892,7 @@ body.land .fuse-slot .card{transform:scale(.84)}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.11.6';
+const VERSION='0.11.7';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -11566,6 +11580,14 @@ function openForge(){
   // panel under the fan — hidden for the duration, same as the Mystery
   // button is while defending.
   $('buyBtnPanel').classList.add('hide');
+  // Two close buttons active at once during forge: the forge popup's own X
+  // (reachable, sits above the fan) and this one, which lives at the very
+  // bottom of the hand panel next to the phone's home-indicator/pull-bar —
+  // reported as hard to hit. Tapping the dimmed void now closes the forge
+  // too (see forgeBackdrop's click guard), so this button is pure
+  // redundancy while forging. Hidden for the duration, same pattern as
+  // buyBtnPanel above.
+  $('handpanelClose').classList.add('hide');
   renderHand();   // MUST repaint: hud() alone does not redraw the fan
 }
 // closeForge and closeHandPanel each close the other (they're one mode from
@@ -11580,6 +11602,7 @@ function closeForge(){
   G.forgeOpen=false;
   $('forge').classList.add('hide');
   $('buyBtnPanel').classList.remove('hide');
+  $('handpanelClose').classList.remove('hide');
   $('handpanel').classList.remove('forging');
   if(G.turn===ME&&G.handOpen)closeHandPanel();
   // drop references to cards that may since have been played or fused
