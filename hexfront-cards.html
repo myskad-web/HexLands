@@ -3878,7 +3878,7 @@ body.land .fuse-slot .card{transform:scale(.84)}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.11.5';
+const VERSION='0.11.6';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -4054,7 +4054,7 @@ const BUILDING_ART={village:{},city:{}};
 // Same probe-and-fallback shape as BUILDING_ART: missing files mean the
 // hand-drawn procedural road (still fully functional, still rotates freely)
 // stays in effect. Safe with 0, 1, 2, or 3 files present.
-const ROAD_ART={ns:{},slash:{},backslash:{}};
+const ROAD_ART={ew:{},slash:{},backslash:{}};
 (function loadRoadArt(){
   // Same three-tier shape as BUILDING_ART now: a per-colour image (no tint,
   // already the right colour), then a single neutral image (tinted at
@@ -4064,8 +4064,8 @@ const ROAD_ART={ns:{},slash:{},backslash:{}};
   // wash a colour over) — matching how the art is actually being made
   // rather than how the code originally assumed it would be.
   const paths={
-    'ns.blue':'art/roads/bridge-ns-blue', 'ns.red':'art/roads/bridge-ns-red',
-    'ns.neutral':'art/roads/bridge-ns',
+    'ew.blue':'art/roads/bridge-ew-blue', 'ew.red':'art/roads/bridge-ew-red',
+    'ew.neutral':'art/roads/bridge-ew',
     'slash.blue':'art/roads/bridge-slash-blue', 'slash.red':'art/roads/bridge-slash-red',
     'slash.neutral':'art/roads/bridge-slash',
     'backslash.blue':'art/roads/bridge-backslash-blue', 'backslash.red':'art/roads/bridge-backslash-red',
@@ -4082,10 +4082,25 @@ const ROAD_ART={ns:{},slash:{},backslash:{}};
 // straight vertical (dx≈0), and two diagonals whose slope is fixed by TILT
 // regardless of hex size, so this works at any zoom level without needing S.
 function classifyRoadAxis(ax,ay,bx,by){
-  const dx=bx-ax, dy=by-ay;
-  if(Math.abs(dx)<0.001)return'ns';
-  // slope of the two diagonals is always ±(sqrt(3)*TILT)/1.5, by construction
-  return(dy/dx)<0?'slash':'backslash';
+  // Roads sit on hex EDGES (vertex to vertex), not on centre-to-centre
+  // lines. On this flat-top grid those edges measure at three angles:
+  // 0/180 (horizontal), ~58 and ~122 degrees. There is NO vertical road
+  // axis — the earlier 'ns' branch could never fire, and an earlier test
+  // "proving" three axes was measuring hexCentre-to-hexCentre directions,
+  // which are a different set of lines entirely and simply not what
+  // road() is ever handed.
+  //
+  // The old slope-sign test also mislabelled horizontals: dy is ~0, so the
+  // sign depended purely on which endpoint came first, and the SAME
+  // horizontal edge could come out 'slash' or 'backslash' from one repaint
+  // to the next — horizontal roads would flicker between two different
+  // diagonal sprites. Bucketing by absolute angle removes the ordering
+  // dependence entirely.
+  let ang=Math.atan2(by-ay,bx-ax)*180/Math.PI;
+  if(ang<0)ang+=180;              // undirected: an edge has no direction
+  if(ang<30||ang>=150)return 'ew';        // horizontal
+  if(ang<90)return 'backslash';           // down to the right
+  return 'slash';                         // up to the right
 }
 // Menu backdrops. Same probe-and-fallback shape again, published as a CSS
 // custom property rather than an inline style — the two backdrops already
