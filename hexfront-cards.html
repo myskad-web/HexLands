@@ -3892,7 +3892,7 @@ body.land .fuse-slot .card{transform:scale(.84)}
 // Single source of truth for the build stamp. Bump this on every change that
 // gets deployed; it is painted into the header AND into the always-visible
 // corner badge, so a device can confirm at a glance which build it loaded.
-const VERSION='0.11.7';
+const VERSION='0.11.8';
 
 // ---------- live log ----------
 // A running trace of what the game is actually doing, so a bug like "my HP
@@ -7540,6 +7540,53 @@ function mkForgeUnit(band,col,pi,weak){
   if(ep)c.name=ep+' '+c.name;
   return c;
 }
+// ---- SOURCE GRADES: where a card came from decides how finished it is ----
+//
+// THE BUG THIS FIXES. For three versions the only thing separating a bought
+// card from a forged one was the `weak` flag, and `weak` trims exactly one
+// stat: attack. Everything that makes a big card actually big — its body
+// (`maxHp`), a Bastion defender's armour (`maxArmor`), hero plate, heal —
+// came through at full printed value no matter which of the three sources
+// produced it. On a heavy card attack is the SMALLEST part of its power, so
+// the trim was nearly invisible: simulated over 40k draws per source, the
+// single best card a 2-energy buy could produce and the single best card a
+// 4-segment forge could produce were THE SAME CARD — a 17-armour, 17-HP
+// Warded Colossus. Reported as "I got 12 armour and 22 HP just from buying
+// the card, so there's no reason to forge", which is precisely correct.
+//
+// Worse, `weak`'s trim is written `if(weak&&!c.taunt&&...)` — it SKIPS taunt
+// cards. So Bastion (blue) defenders, the single strongest thing a shop can
+// hand you, were the one card type that got no reduction at all.
+//
+// Grades scale the axes `weak` never touched. Only four stats, deliberately:
+// the body, the two armours and heal — the ones that made cheap cards
+// unkillable. Flavour riders (venom, pierce, cleave...) are left alone;
+// they're small numbers that read as the card's identity, and rounding them
+// produces nonsense like "1.5 more next turn".
+//
+// Fusion has NO grade. That is the whole payoff: the bench is the only place
+// a card arrives at its printed strength.
+const CARD_GRADE={
+  //     attack: -off, from this tier up | multipliers on body & armour
+  buy:{ off:1, from:1, plate:0.50, armor:0.50, heal:0.50, hp:0.80 },
+  seg:{ off:1, from:2, plate:0.75, armor:0.75, heal:0.75, hp:0.90 },
+  // fuse: absent on purpose — no entry means full strength.
+};
+function applyGrade(c,grade){
+  const g=CARD_GRADE[grade];
+  if(!c||!g)return c;
+  // Applies to taunt cards too, unlike `weak` — see the note above.
+  if(c.tier>=g.from&&c.atk>1)c.atk=Math.max(1,c.atk-g.off);
+  // Floored at 1: a stat that exists on the card face must never round to
+  // nothing, or the rules text promises armour the card doesn't have.
+  const sc=(v,m)=>v?Math.max(1,Math.round(v*m)):v;
+  c.plate=sc(c.plate,g.plate);
+  if(c.maxArmor){c.maxArmor=sc(c.maxArmor,g.armor);c.armor=c.maxArmor;}
+  c.heal=sc(c.heal,g.heal);
+  c.maxHp=sc(c.maxHp,g.hp); c.curHp=c.maxHp;
+  c.desc=wbDesc(c);   // the face must state what the card actually does now
+  return c;
+}
 // An elite is a Legend-band unit that arrives already resonant: it counts as
 // its own partner, so it fires a combo even played alone, and it doubles the
 // next card's resonance instead of adding a sixth flat rule. Purple is a KEY,
@@ -7670,10 +7717,10 @@ function forgeCard(pi,col,band){
   // this gap, fusing two good cards into one slightly better card is a bad
   // trade and nobody would ever use the bench.
   const c=mkForgeUnit(rolled,col,pi,true);
-  // Segment cards are raw material, deliberately: a further point off the
-  // higher bands keeps the gap to a FUSED card wide enough that fusing is
-  // obviously the right move rather than a marginal one.
-  if(c.tier>1&&c.atk>1)c.atk=Math.max(1,c.atk-1);
+  // Segment cards are raw material, deliberately. This used to be a lone
+  // `atk-1` on the higher bands, which barely dented a heavy card — see
+  // CARD_GRADE, which trims the body and the armour as well.
+  applyGrade(c,'seg');
   c.forged=true;              // marks it as fusable at the bench
   giveCard(pi,c);
   return c;
@@ -7686,14 +7733,30 @@ function forgeCard(pi,col,band){
 // Steeply decreasing: the better the card, the slimmer the chance. Asked for
 // directly — "cards that would previously cost 2 gems, more chance; the ones
 // for 6 gems, less chance ... the better the card the slighter chance".
-// Recruit is now the common result and Legend is a genuine event
-// (roughly 44 / 27 / 16 / 9 / 4 before the village cap trims the top).
-const FORGE_BAND_WEIGHTS=[44,27,16,9,4];
-function rollForgeBand(pi){
+// Recruit is the common result and the top of the curve is a genuine event.
+//
+// EACH SOURCE NOW HAS ITS OWN CURVE. Previously buyCard and forgeCard both
+// called this with the SAME weights, so a 2-energy button press rolled a
+// Legend exactly as often as a 4-segment forge — measured at 4.0% vs 4.1%
+// over 40k draws each. That is the whole of "why would I ever forge": the
+// cheapest source in the game could hand you the best card in the game.
+//
+// The rule now is simple and stateable in one line: **the top band is
+// forged, never bought.** Legend is unreachable from either shop; the only
+// way to hold one is to fuse a Captain at the bench.
+//
+//   buy  62/30/8/0/0   — Recruit staple, Elite as an occasional treat
+//   seg  38/28/20/14/0 — the working curve, ceiling at Captain
+//
+// (Villages still trim the top further — see the cap below. Expansion is
+// what opens the curve up, exactly as before.)
+const FORGE_BAND_WEIGHTS=[38,28,20,14,0];   // segments
+const BUY_BAND_WEIGHTS  =[62,30, 8, 0,0];   // the 2-energy Card button
+function rollForgeBand(pi,weights){
   const cap=Math.min(WB_BANDS.length-1,
     Math.max(1,G.players[pi].villages.length));
   let total=0;
-  const w=FORGE_BAND_WEIGHTS.map((x,i)=>i<=cap?x:0);
+  const w=(weights||FORGE_BAND_WEIGHTS).map((x,i)=>i<=cap?x:0);
   w.forEach(x=>total+=x);
   let r=Math.random()*total;
   for(let i=0;i<w.length;i++){ r-=w[i]; if(r<0)return i; }
@@ -11384,11 +11447,13 @@ function buyCard(){
     // a bought unit is deliberately NOT flagged `forged` — the fusion bench
     // takes segment-made cards only, so buying can't shortcut into it
     const col=GEM_COLS[(Math.random()*GEM_COLS.length)|0];
-    card=mkForgeUnit(rollForgeBand(ME),col,ME,true);
-    // The cheapest card source in the game should also be the weakest one.
-    // `weak` already trims a point of attack; this takes another off the
-    // non-Recruit results so a 2-energy buy can't rival a fused unit.
-    if(card.tier>0&&card.atk>1)card.atk=Math.max(1,card.atk-1);
+    // Its own band curve (BUY_BAND_WEIGHTS), not the segment one: the
+    // cheapest source in the game tops out at Elite and cannot produce a
+    // Captain or a Legend at any price.
+    card=mkForgeUnit(rollForgeBand(ME,BUY_BAND_WEIGHTS),col,ME,true);
+    // The cheapest card source should also be the weakest one, on every
+    // axis and not just attack — see CARD_GRADE.
+    applyGrade(card,'buy');
   }else{
     card=mkMystery();
   }
